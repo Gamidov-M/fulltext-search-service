@@ -28,6 +28,14 @@ namespace fulltext_search_service {
     public:
         InvertedIndex() = default;
 
+        void SetStoragePath(std::string path);
+
+        [[nodiscard]] const std::string &GetStoragePath() const noexcept { return storage_path_; }
+
+        [[nodiscard]] bool Load();
+
+        bool Save() const;
+
         void UpdateDocumentBase(std::vector<std::string> input_docs);
 
         [[nodiscard]] const std::vector<Entry> &GetWordCount(std::string_view word) const;
@@ -37,9 +45,9 @@ namespace fulltext_search_service {
         [[nodiscard]] size_t GetDocumentCount() const noexcept { return docs_.size(); }
 
     private:
-        using Dict = std::unordered_map<std::string, std::vector<Entry>,
-                TransparentStringHash, TransparentStringEqual>;
+        using Dict = std::unordered_map<std::string, std::vector<Entry>, TransparentStringHash, TransparentStringEqual>;
 
+        std::string storage_path_;
         std::vector<std::string> docs_;
         Dict freq_dictionary_;
     };

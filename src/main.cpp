@@ -1,19 +1,33 @@
 #include "inverted_index.hpp"
+#include <exception>
 #include <print>
 
 int main() {
-    using namespace fulltext_search_service;
-    InvertedIndex index;
-    index.UpdateDocumentBase({
-        "тест документ с текстом",
-        "тест второй документ",
-        "мда текст и еще текст"
-    });
+    try {
+        using namespace fulltext_search_service;
+        InvertedIndex index;
+        index.SetStoragePath("./index-data");
+        if (!index.Load()) {
+            std::println(stderr, "Не удалось загрузить индекс.");
+        } else {
+            std::println("Индекс загружен, документов: {}", index.GetDocumentCount());
+        }
 
-    std::println("Документов: {}", index.GetDocumentCount());
+        index.UpdateDocumentBase({
+             "тест документ с текстом",
+             "тест второй документ",
+             "мда текст и еще текст"
+        });
 
-    for (const auto &e: index.GetWordCount("документ")) {
-        std::println("  doc_id={} count={}", e.doc_id, e.count);
+        std::println("Документов: {}", index.GetDocumentCount());
+
+        for (const auto &e: index.GetWordCount("документ")) {
+            std::println("  doc-id={} count={}", e.doc_id, e.count);
+        }
+
+    } catch (const std::exception &ex) {
+        std::println(stderr, "Ошибка: {}", ex.what());
+        return 1;
     }
 
     return 0;
