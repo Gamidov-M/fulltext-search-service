@@ -15,7 +15,10 @@ elseif(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     endif()
 endif()
 
-add_library(fulltext_search_service_lib src/tokenizer.cpp)
+add_library(fulltext_search_service_lib
+        src/tokenizer.cpp
+        src/inverted_index.cpp
+        )
 target_include_directories(fulltext_search_service_lib PUBLIC ${CMAKE_SOURCE_DIR}/src)
 
 add_executable(fulltext-search-service src/main.cpp)

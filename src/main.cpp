@@ -1,13 +1,20 @@
-#include <iostream>
-#include "tokenizer.hpp"
+#include "inverted_index.hpp"
+#include <print>
 
 int main() {
-    std::cout << "C++: " << __cplusplus << "\n";
+    using namespace fulltext_search_service;
+    InvertedIndex index;
+    index.UpdateDocumentBase({
+        "тест документ с текстом",
+        "тест второй документ",
+        "мда текст и еще текст"
+    });
 
-#ifdef __GNUC__
-    std::cout << "GCC: " << __GNUC__ << "." << __GNUC_MINOR__ << "." << __GNUC_PATCHLEVEL__ << "\n";
-#endif
+    std::println("Документов: {}", index.GetDocumentCount());
 
+    for (const auto &e: index.GetWordCount("документ")) {
+        std::println("  doc_id={} count={}", e.doc_id, e.count);
+    }
 
     return 0;
 }

@@ -3,12 +3,12 @@
 
 namespace fulltext_search_service {
 
-    void tokenize(const std::string& text, std::unordered_map<std::string, size_t>& out) {
+    void tokenize(const std::string &text, std::unordered_map<std::string, size_t> &out) {
         out.reserve(out.size() + 32);
-        for (auto word_range : text | std::views::split(' ')) {
+        for (auto word_range: text | std::views::split(' ')) {
             std::string word;
             word.reserve(32);
-            for (char c : word_range) {
+            for (char c: word_range) {
                 word += c;
             }
             if (!word.empty() && word.size() <= kMaxWordLength) {
