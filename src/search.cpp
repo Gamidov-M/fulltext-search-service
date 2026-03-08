@@ -11,12 +11,12 @@ namespace fulltext_search_service {
                 const InvertedIndex &index,
                 const std::string &query,
                 int max_responses,
-                std::vector<RelativeIndex> &out
+                std::vector <RelativeIndex> &out
         ) {
-            std::unordered_map<std::string, size_t> word_count;
+            std::unordered_map <std::string, size_t> word_count;
             tokenize(query, word_count);
 
-            std::unordered_map<size_t, size_t> doc_relevance;
+            std::unordered_map <size_t, size_t> doc_relevance;
             doc_relevance.reserve(256);
             for (const auto &[word, _]: word_count) {
                 for (const auto &entry: index.GetWordCount(word)) {
@@ -53,16 +53,40 @@ namespace fulltext_search_service {
 
     } // namespace
 
-    std::vector<std::vector<RelativeIndex>> Search::search(
-            const std::vector<std::string> &queries,
+    std::vector <std::vector<RelativeIndex>> Search::search(
+            const std::vector <std::string> &queries,
             int max_responses
     ) const {
-        std::vector<std::vector<RelativeIndex>> results(queries.size());
-        std::vector<RelativeIndex> local_list;
-        for (size_t i = 0; i < queries.size(); ++i) {
-            process_one_query(index_, queries[i], max_responses, local_list);
-            results[i] = std::move(local_list);
+        std::vector <std::vector<RelativeIndex>> results(queries.size());
+        if (queries.empty()) {
+            return results;
         }
+
+        const unsigned num_workers = std::min(
+                static_cast<unsigned>(queries.size()),
+                std::max(1u, std::thread::hardware_concurrency())
+        );
+        std::mutex result_mutex;
+        std::vector <std::jthread> workers;
+        workers.reserve(num_workers);
+
+        for (unsigned t = 0; t < num_workers; ++t) {
+            workers.emplace_back([this, &queries, &results, &result_mutex, max_responses, num_workers, t] {
+                std::vector <RelativeIndex> local_list;
+                local_list.reserve(512);
+                const auto indices = std::views::iota(static_cast<size_t>(t), queries.size()) |
+                                     std::views::stride(static_cast<size_t>(num_workers));
+                for (size_t i: indices) {
+                    process_one_query(index_, queries[i], max_responses, local_list);
+                    {
+                        std::lock_guard lock(result_mutex);
+                        results[i] = std::move(local_list);
+                    }
+                }
+            });
+        }
+        workers.clear();
+
         return results;
     }
 

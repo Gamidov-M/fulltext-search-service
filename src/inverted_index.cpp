@@ -185,17 +185,42 @@ namespace fulltext_search_service {
             return;
         }
         docs_ = std::move(input_docs);
-        freq_dictionary_.clear();
+        const size_t num_docs = docs_.size();
 
-        for (size_t doc_id = 0; doc_id < docs_.size(); ++doc_id) {
-            std::unordered_map<std::string, size_t> word_count;
-            tokenize(docs_[doc_id], word_count);
-            for (auto &[w, count]: word_count) {
-                freq_dictionary_[std::move(w)].push_back({doc_id, count});
+        const unsigned num_workers = std::min(
+                static_cast<unsigned>(num_docs),
+                std::max(1u, std::thread::hardware_concurrency())
+        );
+        std::vector<Dict> per_thread_dicts(num_workers);
+        std::vector<std::jthread> workers;
+        workers.reserve(num_workers);
+
+        for (unsigned t = 0; t < num_workers; ++t) {
+            workers.emplace_back([this, &per_thread_dicts, num_workers, t] {
+                Dict &local = per_thread_dicts[t];
+                auto indices = std::views::iota(static_cast<size_t>(t), docs_.size()) |
+                               std::views::stride(static_cast<size_t>(num_workers));
+                for (size_t doc_id: indices) {
+                    std::unordered_map<std::string, size_t> word_count;
+                    tokenize(docs_[doc_id], word_count);
+                    for (auto &[w, count]: word_count) {
+                        local[std::move(w)].push_back({doc_id, count});
+                    }
+                }
+            });
+        }
+
+        workers.clear();
+
+        Dict new_dict;
+        for (Dict &local: per_thread_dicts) {
+            for (auto &[word, list]: local) {
+                auto &target = new_dict[word];
+                target.insert(target.end(), std::make_move_iterator(list.begin()), std::make_move_iterator(list.end()));
             }
         }
 
-        for (auto &[word, list]: freq_dictionary_) {
+        for (auto &[word, list]: new_dict) {
             std::ranges::sort(list, {}, &Entry::doc_id);
         }
 

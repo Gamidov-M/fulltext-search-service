@@ -43,3 +43,7 @@ target_link_libraries(fulltext_search_service_lib PUBLIC
 
 add_executable(fulltext-search-service src/main.cpp)
 target_link_libraries(fulltext-search-service PRIVATE fulltext_search_service_lib)
+
+# Пример клиента
+add_executable(example example.cpp)
+target_link_libraries(example PRIVATE nlohmann_json::nlohmann_json httplib::httplib)
