@@ -25,17 +25,26 @@ namespace fulltext_search_service {
 
         std::string query = body.value("q", "");
         int limit = std::clamp(body.value("limit", max_responses), 1, ApiConfig::kMaxLimit);
-        int offset = std::max(body.value("offset", 0), 0);
+        int offset = std::clamp(body.value("offset", 0), 0, ApiConfig::kMaxOffset);
+
+        const int request_size = std::min(
+                offset + limit,
+                ApiConfig::kMaxOffset + ApiConfig::kMaxLimit
+        );
 
         auto start = std::chrono::steady_clock::now();
-        auto results = search.search(std::vector{query}, limit);
+        auto results = search.search(std::vector{query}, request_size);
         auto processing_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - start
         ).count();
 
+        const auto &full_list = results.empty() ? std::vector<RelativeIndex>{} : results[0];
+        const size_t from = static_cast<size_t>(offset);
+        const size_t to = std::min(from + static_cast<size_t>(limit), full_list.size());
+
         nlohmann::json hits = nlohmann::json::array();
-        const auto &list = results.empty() ? std::vector<RelativeIndex>{} : results[0];
-        for (const auto &rel: list) {
+        for (size_t i = from; i < to; ++i) {
+            const auto &rel = full_list[i];
             hits.push_back(
                     {
                             {"id",            static_cast<int>(rel.doc_id)},
@@ -48,7 +57,7 @@ namespace fulltext_search_service {
                 {"hits",               hits},
                 {"offset",             offset},
                 {"limit",              limit},
-                {"estimatedTotalHits", hits.size()},
+                {"estimatedTotalHits", full_list.size()},
                 {"processingTimeMs",   processing_time_ms},
                 {"query",              query}
         });

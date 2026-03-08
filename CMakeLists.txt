@@ -47,3 +47,7 @@ target_link_libraries(fulltext-search-service PRIVATE fulltext_search_service_li
 # Пример клиента
 add_executable(example example.cpp)
 target_link_libraries(example PRIVATE nlohmann_json::nlohmann_json httplib::httplib)
+
+# Бенчмарк
+add_executable(benchmark_load benchmark_load.cpp)
+target_link_libraries(benchmark_load PRIVATE nlohmann_json::nlohmann_json httplib::httplib)

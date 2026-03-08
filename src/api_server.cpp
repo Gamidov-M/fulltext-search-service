@@ -2,6 +2,11 @@
 #include "api_handlers.hpp"
 #include "response_utils.hpp"
 #include <print>
+
+#ifndef CPPHTTPLIB_THREAD_POOL_COUNT
+#define CPPHTTPLIB_THREAD_POOL_COUNT 64
+#endif
+
 #include <httplib.h>
 
 namespace fulltext_search_service {
@@ -10,6 +15,7 @@ namespace fulltext_search_service {
             : index_(index), search_(std::make_unique<Search>(index)),
               max_responses_(max_responses > 0 ? max_responses : ApiConfig::kDefaultMaxResponses),
               server_(std::make_unique<httplib::Server>()) {
+        server_->set_keep_alive_max_count(300);
         setupRoutes();
     }
 
@@ -37,7 +43,7 @@ namespace fulltext_search_service {
 
     bool ApiServer::listen(const std::string &host, int port) {
         std::println("{}:{}", host, port);
-        return server_->listen(host.c_str(), port);
+        return server_->listen(host, port);
     }
 
     void ApiServer::stop() {
