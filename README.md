@@ -8,10 +8,10 @@
 - [x] Список документов с пагинацией
 - [x] Полнотекстовый поиск с ранжированием (TF, нормализация, сортировка)
 - [x] Персистентность индекса (docs.dat, dict.dat, сохранение/загрузка)
+- [x] Конфигурация через конфиг-файл и systemd конфиг
 
 ### Планируется
 
-- [ ] Конфигурация через конфиг-файл
 - [ ] Rate limiting и лимиты размера запросов
 - [ ] Стоп-слова при индексации и в запросе
 - [ ] Ранжирование BM25 или TF-IDF (улучшение качества поиска)
@@ -35,6 +35,30 @@ cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
 
 ./build/fulltext-search-service
+```
+
+Запуск с конфигом:
+
+```bash
+./build/fulltext-search-service --config=config.yaml
+```
+
+Без опции --config конфиг обязательно читается из /etc/fulltext-search-service/config.yaml,
+при отсутствии или ошибке файла сервис завершается с ошибкой
+
+### systemd
+
+Установка и запуск как сервис:
+
+```bash
+sudo mkdir -p /var/lib/fulltext-search-service /etc/fulltext-search-service
+sudo cp config.yaml /etc/fulltext-search-service/config.yaml
+
+sudo cp build/fulltext-search-service /usr/local/bin/
+
+sudo cp systemd/fulltext-search-service.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable --now fulltext-search-service
 ```
 
 ## API

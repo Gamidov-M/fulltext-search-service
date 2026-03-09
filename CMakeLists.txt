@@ -28,7 +28,14 @@ FetchContent_Declare(httplib
         )
 FetchContent_MakeAvailable(httplib)
 
+FetchContent_Declare(yaml-cpp
+        GIT_REPOSITORY https://github.com/jbeder/yaml-cpp.git
+        GIT_TAG yaml-cpp-0.7.0
+        )
+FetchContent_MakeAvailable(yaml-cpp)
+
 add_library(fulltext_search_service_lib
+        src/config.cpp
         src/tokenizer.cpp
         src/inverted_index.cpp
         src/search.cpp
@@ -39,6 +46,7 @@ target_include_directories(fulltext_search_service_lib PUBLIC ${CMAKE_SOURCE_DIR
 target_link_libraries(fulltext_search_service_lib PUBLIC
         nlohmann_json::nlohmann_json
         httplib::httplib
+        yaml-cpp::yaml-cpp
         )
 
 add_executable(fulltext-search-service src/main.cpp)

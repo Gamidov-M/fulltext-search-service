@@ -34,6 +34,8 @@ namespace fulltext_search_service {
         // Путь к каталогу для хранения индекса на диске
         void SetStoragePath(std::string path);
 
+        void SetMaxWordLength(int value);
+
         [[nodiscard]] const std::string &GetStoragePath() const noexcept { return storage_path_; }
 
         // Загружает индекс с диска
@@ -64,6 +66,7 @@ namespace fulltext_search_service {
         using Dict = std::unordered_map<std::string, std::vector<Entry>, TransparentStringHash, TransparentStringEqual>;
 
         std::string storage_path_;
+        int max_word_length_ = 100;
         std::vector<std::string> docs_;
         Dict freq_dictionary_;
     };

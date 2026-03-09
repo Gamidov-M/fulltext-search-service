@@ -6,11 +6,14 @@
 
 namespace fulltext_search_service {
 
-    // Максимальная длина слова; более длинные токены отбрасываются при индексации и при разборе запроса
-    constexpr std::size_t kMaxWordLength = 100;
-
     // Разбивает текст на слова по пробелам и заполняет карту 'слово -> число вхождений'
-    // out не очищается, только дополняется
-    void tokenize(const std::string &text, std::unordered_map<std::string, size_t> &out);
+    // out не очищается, только дополняется.
+    // Слова длиннее max_word_length отбрасываются (max_word_length задаётся из конфига: index.max_word_length)
+    void tokenize(
+            const std::string &text,
+            std::unordered_map <std::string,
+            size_t> &out,
+            std::size_t max_word_length
+    );
 
 } // namespace fulltext_search_service

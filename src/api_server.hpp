@@ -1,6 +1,7 @@
 #pragma once
 
 #include "api_handlers.hpp"
+#include "config.hpp"
 #include "inverted_index.hpp"
 #include "search.hpp"
 #include <memory>
@@ -14,7 +15,11 @@ namespace fulltext_search_service {
 
     class ApiServer {
     public:
-        ApiServer(InvertedIndex &index, int max_responses = ApiConfig::kDefaultMaxResponses);
+        ApiServer(InvertedIndex &index,
+                  const ApiConfigSection &api_config,
+                  const ServerConfig &server_config,
+                  const IndexConfig &index_config
+        );
 
         ~ApiServer();
 
@@ -31,11 +36,15 @@ namespace fulltext_search_service {
 
         InvertedIndex &index_;
 
-        std::unique_ptr<Search> search_;
+        ApiConfigSection api_config_;
 
-        int max_responses_;
+        ServerConfig server_config_;
 
-        std::unique_ptr<httplib::Server> server_;
+        IndexConfig index_config_;
+
+        std::unique_ptr <Search> search_;
+
+        std::unique_ptr <httplib::Server> server_;
     };
 
 } // namespace fulltext_search_service

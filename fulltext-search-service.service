@@ -1,0 +1,13 @@
+[Unit]
+Description=Сервис полнотекстового поиска с HTTP API
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/fulltext-search-service
+WorkingDirectory=/var/lib/fulltext-search-service
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

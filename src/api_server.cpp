@@ -13,11 +13,16 @@
 
 namespace fulltext_search_service {
 
-    ApiServer::ApiServer(InvertedIndex &index, int max_responses)
-            : index_(index), search_(std::make_unique<Search>(index)),
-              max_responses_(max_responses > 0 ? max_responses : ApiConfig::kDefaultMaxResponses),
-              server_(std::make_unique<httplib::Server>()) {
-        server_->set_keep_alive_max_count(300);
+    ApiServer::ApiServer(
+            InvertedIndex &index,
+            const ApiConfigSection &api_config,
+            const ServerConfig &server_config,
+            const IndexConfig &index_config
+    ) : index_(index), api_config_(api_config), server_config_(server_config),
+        index_config_(index_config),
+        search_(std::make_unique<Search>(index, static_cast<std::size_t>(index_config.max_word_length))),
+        server_(std::make_unique<httplib::Server>()) {
+        server_->set_keep_alive_max_count(server_config_.keep_alive_max_count);
         setupRoutes();
     }
 
@@ -25,10 +30,10 @@ namespace fulltext_search_service {
 
     void ApiServer::setupRoutes() {
         server_->Post("/indexes/search", [this](const httplib::Request &req, httplib::Response &res) {
-            handleSearch(index_, *search_, max_responses_, req, res);
+            handleSearch(index_, *search_, api_config_, req, res);
         });
         server_->Get("/indexes/documents", [this](const httplib::Request &req, httplib::Response &res) {
-            handleGetDocuments(index_, req, res);
+            handleGetDocuments(index_, api_config_, req, res);
         });
         server_->Post("/indexes/documents", [this](const httplib::Request &req, httplib::Response &res) {
             handlePostDocuments(index_, req, res);

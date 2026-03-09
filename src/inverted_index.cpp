@@ -38,6 +38,12 @@ namespace fulltext_search_service {
         storage_path_ = std::move(path);
     }
 
+    void InvertedIndex::SetMaxWordLength(int value) {
+        if (value > 0) {
+            max_word_length_ = value;
+        }
+    }
+
     bool InvertedIndex::Load() {
         if (storage_path_.empty()) {
             return false;
@@ -215,7 +221,7 @@ namespace fulltext_search_service {
                                std::views::stride(static_cast<size_t>(num_workers));
                 for (size_t doc_id: indices) {
                     std::unordered_map<std::string, size_t> word_count;
-                    tokenize(docs_[doc_id], word_count);
+                    tokenize(docs_[doc_id], word_count, static_cast<std::size_t>(max_word_length_));
                     for (auto &[w, count]: word_count) {
                         local[std::move(w)].push_back({doc_id, count});
                     }

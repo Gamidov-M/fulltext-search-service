@@ -15,10 +15,11 @@ namespace fulltext_search_service {
                 const InvertedIndex &index,
                 const std::string &query,
                 int max_responses,
+                std::size_t max_word_length,
                 std::vector <RelativeIndex> &out
         ) {
             std::unordered_map <std::string, size_t> word_count;
-            tokenize(query, word_count);
+            tokenize(query, word_count, max_word_length);
 
             std::unordered_map <size_t, size_t> doc_relevance;
             doc_relevance.reserve(256);
@@ -85,7 +86,7 @@ namespace fulltext_search_service {
                 const auto indices = std::views::iota(static_cast<size_t>(t), queries.size()) |
                                      std::views::stride(static_cast<size_t>(num_workers));
                 for (size_t i: indices) {
-                    process_one_query(index_, queries[i], max_responses, local_list);
+                    process_one_query(index_, queries[i], max_responses, max_word_length_, local_list);
                     {
                         std::lock_guard lock(result_mutex);
                         results[i] = std::move(local_list);

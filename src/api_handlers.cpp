@@ -8,7 +8,7 @@ namespace fulltext_search_service {
     void handleSearch(
             InvertedIndex &index,
             Search &search,
-            int max_responses,
+            const ApiConfigSection &api,
             const httplib::Request &req,
             httplib::Response &res
     ) {
@@ -24,12 +24,12 @@ namespace fulltext_search_service {
         }
 
         std::string query = body.value("q", "");
-        int limit = std::clamp(body.value("limit", max_responses), 1, ApiConfig::kMaxLimit);
-        int offset = std::clamp(body.value("offset", 0), 0, ApiConfig::kMaxOffset);
+        int limit = std::clamp(body.value("limit", api.max_responses), 1, api.max_limit);
+        int offset = std::clamp(body.value("offset", 0), 0, api.max_offset);
 
         const int request_size = std::min(
                 offset + limit,
-                ApiConfig::kMaxOffset + ApiConfig::kMaxLimit
+                api.max_offset + api.max_limit
         );
 
         auto start = std::chrono::steady_clock::now();
@@ -63,10 +63,15 @@ namespace fulltext_search_service {
         });
     }
 
-    void handleGetDocuments(InvertedIndex &index, const httplib::Request &req, httplib::Response &res) {
+    void handleGetDocuments(
+            InvertedIndex &index,
+            const ApiConfigSection &api,
+            const httplib::Request &req,
+            httplib::Response &res
+    ) {
         const size_t total = index.GetDocumentCount();
-        const int offset = parseQueryInt(req, "offset", 0, 0, ApiConfig::kMaxOffset);
-        const int limit = parseQueryInt(req, "limit", ApiConfig::kDefaultLimit, 1, ApiConfig::kMaxLimit);
+        const int offset = parseQueryInt(req, "offset", 0, 0, api.max_offset);
+        const int limit = parseQueryInt(req, "limit", api.default_limit, 1, api.max_limit);
         nlohmann::json results = nlohmann::json::array();
         for (size_t i = static_cast<size_t>(offset), n = 0; i < total && n < static_cast<size_t>(limit); ++i, ++n) {
             results.push_back(
@@ -84,7 +89,11 @@ namespace fulltext_search_service {
         });
     }
 
-    void handlePostDocuments(InvertedIndex &index, const httplib::Request &req, httplib::Response &res) {
+    void handlePostDocuments(
+            InvertedIndex &index,
+            const httplib::Request &req,
+            httplib::Response &res
+    ) {
         if (req.body.empty()) {
             sendJson(res, 400, {
                     {"message", "Тело запроса пусто"},
