@@ -7,9 +7,16 @@
 namespace fulltext_search_service {
 
     struct ApiConfig {
+        // Лимит документов/результатов по умолчанию (GET /documents, поиск)
         static constexpr int kDefaultLimit = 10;
+
+        // Максимальный limit в одном запросе
         static constexpr int kMaxLimit = 1000;
+
+        // Максимальный offset для пагинации списка документов
         static constexpr int kMaxOffset = 10000;
+
+        // Число результатов поиска по умолчанию (если не передан limit)
         static constexpr int kDefaultMaxResponses = 5;
     };
 

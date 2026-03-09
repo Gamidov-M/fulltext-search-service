@@ -6,19 +6,24 @@
 #include <fstream>
 #include <ranges>
 #include <stdexcept>
+#include <thread>
 
 namespace fulltext_search_service {
 
     namespace {
         constexpr const char *kDocsFilename = "docs.dat";
         constexpr const char *kDictFilename = "dict.dat";
+
+        // Пустой вектор для возврата из GetWordCount при отсутствии слова (короче избегаем аллокаций)
         const std::vector<Entry> kEmptyPostings;
 
+        // Запись значения типа T в бинарный поток (без сериализации, только сырые байты)
         template<typename T>
         bool write_raw(std::ostream &out, const T &value) {
             return out.write(reinterpret_cast<const char *>(&value), sizeof(T)).good();
         }
 
+        // Чтение значения типа T из бинарного потока
         template<typename T>
         bool read_raw(std::istream &in, T &value) {
             return in.read(reinterpret_cast<char *>(&value), sizeof(T)).good();
@@ -42,6 +47,8 @@ namespace fulltext_search_service {
         fs::path dir(storage_path_);
         fs::path docs_path = dir / kDocsFilename;
         fs::path dict_path = dir / kDictFilename;
+
+        // нет данных - считаем успехом (пустой индекс)
         if (!fs::exists(docs_path) || !fs::exists(dict_path)) {
             return true;
         }
@@ -52,6 +59,7 @@ namespace fulltext_search_service {
             return false;
         }
 
+        // Формат docs.dat num_docs (uint64), затем для каждого doc - length (uint64), затем байты текста
         uint64_t num_docs = 0;
         if (!read_raw(docs_in, num_docs)) {
             return false;
@@ -73,6 +81,7 @@ namespace fulltext_search_service {
             docs_.push_back(std::move(doc));
         }
 
+        // Формат dict.dat num_terms (uint64), для каждого термина - word_len, word bytes, num_postings, затем (doc_id, count)
         uint64_t num_terms = 0;
         if (!read_raw(dict_in, num_terms)) {
             return false;
@@ -187,6 +196,9 @@ namespace fulltext_search_service {
         docs_ = std::move(input_docs);
         const size_t num_docs = docs_.size();
 
+
+        // Число потоков = min(документы, ядра)
+        // токенизация - tokenizer::tokenize()
         const unsigned num_workers = std::min(
                 static_cast<unsigned>(num_docs),
                 std::max(1u, std::thread::hardware_concurrency())
@@ -195,6 +207,7 @@ namespace fulltext_search_service {
         std::vector<std::jthread> workers;
         workers.reserve(num_workers);
 
+        // Каждый поток обрабатывает свою долю документов (doc_id % num_workers == t)
         for (unsigned t = 0; t < num_workers; ++t) {
             workers.emplace_back([this, &per_thread_dicts, num_workers, t] {
                 Dict &local = per_thread_dicts[t];
@@ -212,6 +225,9 @@ namespace fulltext_search_service {
 
         workers.clear();
 
+        // Слияние локальных словарей потоков в один freq_dictionary_
+        // Один документ обрабатывается ровно одним потоком (stride)
+        // дубликатов doc_id в постингах нет
         Dict new_dict;
         for (Dict &local: per_thread_dicts) {
             for (auto &[word, list]: local) {
@@ -220,14 +236,18 @@ namespace fulltext_search_service {
             }
         }
 
+        // Сортируем постинги по doc_id, чтобы GetWordCount возвращал готовый порядок без копирования
         for (auto &[word, list]: new_dict) {
             std::ranges::sort(list, {}, &Entry::doc_id);
         }
+
+        freq_dictionary_ = std::move(new_dict);
 
         Save();
     }
 
     const std::vector<Entry> &InvertedIndex::GetWordCount(std::string_view word) const {
+        // Поиск по string_view без копирования ключа
         auto it = freq_dictionary_.find(word);
         if (it == freq_dictionary_.end()) {
             return kEmptyPostings;

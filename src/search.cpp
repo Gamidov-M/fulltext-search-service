@@ -1,12 +1,16 @@
 #include "search.hpp"
 #include "tokenizer.hpp"
 #include <algorithm>
+#include <mutex>
+#include <ranges>
+#include <thread>
 #include <unordered_map>
 
 namespace fulltext_search_service {
 
     namespace {
 
+        // tokenize(query) -> суммирование релевантности по doc_id -> нормализация ранга [0, 1] -> сортировка -> топ max_responses
         void process_one_query(
                 const InvertedIndex &index,
                 const std::string &query,
@@ -29,6 +33,7 @@ namespace fulltext_search_service {
                 return;
             }
 
+            // Ранг нормализуем относительно максимума по текущему ответу (не по всему индексу)
             const size_t max_rel = std::ranges::max_element(doc_relevance, {}, [](const auto &p) {
                 return p.second;
             })->second;
@@ -39,6 +44,8 @@ namespace fulltext_search_service {
                 out.push_back({doc_id, static_cast<float>(count) / max_rel_f});
             }
 
+            // Сначала по убыванию ранга
+            // при равенстве - по doc_id для стабильного порядка
             std::ranges::sort(out, [](const auto &a, const auto &b) {
                 if (a.rank != b.rank) {
                     return a.rank > b.rank;
@@ -70,6 +77,7 @@ namespace fulltext_search_service {
         std::vector <std::jthread> workers;
         workers.reserve(num_workers);
 
+        // Каждый поток пишет только в results[i] для своих запросов; i совпадает с индексом запроса
         for (unsigned t = 0; t < num_workers; ++t) {
             workers.emplace_back([this, &queries, &results, &result_mutex, max_responses, num_workers, t] {
                 std::vector <RelativeIndex> local_list;

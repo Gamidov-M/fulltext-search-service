@@ -3,6 +3,8 @@
 #include "response_utils.hpp"
 #include <print>
 
+// Размер пула потоков cpp-httplib
+// число одновременных запросов без блокировки
 #ifndef CPPHTTPLIB_THREAD_POOL_COUNT
 #define CPPHTTPLIB_THREAD_POOL_COUNT 64
 #endif
