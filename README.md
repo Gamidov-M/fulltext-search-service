@@ -9,6 +9,7 @@
 - [x] Полнотекстовый поиск с ранжированием (TF, нормализация, сортировка)
 - [x] Персистентность индекса (docs.dat, dict.dat, сохранение/загрузка)
 - [x] Конфигурация через конфиг-файл и systemd конфиг
+- [x] Логирование (флаг --dev) и Dockerfile (сборка образа и запуск)
 
 ### Планируется
 
@@ -22,33 +23,40 @@
 - [ ] Инкрементальное обновление индекса (добавление/удаление документов без полной пересборки)
 - [ ] Метаданные документов (поля title, date и фильтрация по ним)
 
-### Зависимости
+## Сборка на хосте
+
+#### Зависимости
 
 - C++ 23
 - GCC 14
 - CMake 3.22
+- Git (для загрузки сторонних библиотек через FetchContent)
+- make или ninja (система сборки обычно входит в build-essential)
 
-## Сборка и Запуск
+При первой конфигурации CMake скачивает исходники зависимостей (nlohmann/json, cpp-httplib, yaml-cpp) в каталог
+third_party
+
+#### Сборка
 
 ```bash
 cmake -B build -DCMAKE_BUILD_TYPE=Debug
 cmake --build build
-
-./build/fulltext-search-service
 ```
 
-Запуск с конфигом:
+## Запуск
+
+```bash
+./build/fulltext-search-service
+# или
+./build/fulltext-search-service --config=config.yaml
+```
+
+Без опции --config конфиг обязательно читается из /etc/fulltext-search-service/config.yaml
+при отсутствии или ошибке файла сервис завершается с ошибкой
 
 ```bash
 ./build/fulltext-search-service --config=config.yaml
 ```
-
-Без опции --config конфиг обязательно читается из /etc/fulltext-search-service/config.yaml,
-при отсутствии или ошибке файла сервис завершается с ошибкой
-
-### systemd
-
-Установка и запуск как сервис:
 
 ```bash
 sudo mkdir -p /var/lib/fulltext-search-service /etc/fulltext-search-service
@@ -59,6 +67,29 @@ sudo cp build/fulltext-search-service /usr/local/bin/
 sudo cp systemd/fulltext-search-service.service /etc/systemd/system/
 sudo systemctl daemon-reload
 sudo systemctl enable --now fulltext-search-service
+```
+
+### Docker
+
+Получить бинарник
+
+```bash
+docker build --target binary -t fulltext-search-service-binary .
+mkdir -p build
+docker run --rm -v $(pwd)/build:/output fulltext-search-service-binary
+```
+
+Собрать образ и запустить сервис
+
+```bash
+docker build -t fulltext-search-service .
+docker run --rm -p 8000:8000 fulltext-search-service
+```
+
+Запуск с сохранением индекса на хосте
+
+```bash
+docker run --rm -p 8000:8000 -v $(pwd)/data:/var/lib/fulltext-search-service fulltext-search-service
 ```
 
 ## API
@@ -148,57 +179,3 @@ curl -X POST 'http://localhost:8000/indexes/search' \
     "query": "второго"
 }
 ```
-
----
-
-### Инвертированный индекс
-
-#### Структура в памяти
-
-- docs_ - vector<string>, документы по порядку - индекс = doc_id
-- freq_dictionary_ - unordered_map (слово -> список постингов).
-  Ключ - string, поиск по string_view через прозрачные хеш и сравнение (TransparentStringHash, TransparentStringEqual)
-- Постинг - пара (doc_id, count). Списки постингов отсортированы по doc_id (нужно для стабильного вывода и удобства
-  слияния при многопоточной индексации)
-
-#### Формат на диске
-
-- docs.dat
-    - uint64_t - число документов
-    - для каждого документа: uint64_t длина, затем байты текста (без нуль-терминатора)
-
-- dict.dat
-    - uint64_t - число терминов
-    - для каждого термина: uint64_t длина слова, байты слова, uint64_t число постингов, затем
-      пары (uint64_t doc_id, uint64_t count)
-
-Порядок терминов в файле не фиксирован (словарь неупорядочен)
-
-При загрузке отсутствие файлов трактуется как пустой индекс (успех)
-
-#### Обновление базы документов
-
-UpdateDocumentBase полностью заменяет базу
-
-1. Документы сохраняются в docs_
-2. Пул потоков: каждый поток обрабатывает документы с индексами t, t+N, t+2N, ... (N = число потоков). Для каждого
-   документа - токенизация, формирование локального словаря 'слово -> список (doc_id, count)'
-3. Локальные словари объединяются в один (конкатенация списков постингов по каждому слову). Дубликатов doc_id по
-   одному слову нет, так как один документ обрабатывается только одним потоком
-4. Списки постингов сортируются по doc_id
-5. Вызов Save() - запись docs.dat и dict.dat
-
----
-
-### Поиск
-
-В process_one_query
-
-1. Токенизация запроса -> карта 'слово -> количество' (для запроса обычно 0/1, логика общая)
-2. Для каждого слова запроса - по индексу берётся список постингов - по каждому постингу накапливается релевантность
-   документа: doc_relevance[doc_id] += entry.count
-3. Релевантность нормализуется: деление на максимум по текущему ответу -> ранг в [0, 1]
-4. Сортировка: по убыванию ранга, при равенстве - по возрастанию doc_id
-5. Обрезка до max_responses элементов
-
-Метрика релевантности сумма вхождений терминов запроса в документе (TF без логарифма, без IDF)

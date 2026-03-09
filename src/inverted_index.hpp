@@ -36,6 +36,8 @@ namespace fulltext_search_service {
 
         void SetMaxWordLength(int value);
 
+        void SetDevMode(bool dev);
+
         [[nodiscard]] const std::string &GetStoragePath() const noexcept { return storage_path_; }
 
         // Загружает индекс с диска
@@ -67,6 +69,7 @@ namespace fulltext_search_service {
 
         std::string storage_path_;
         int max_word_length_ = 100;
+        bool dev_mode_ = false;
         std::vector<std::string> docs_;
         Dict freq_dictionary_;
     };

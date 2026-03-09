@@ -12,16 +12,23 @@ namespace fulltext_search_service {
             Search &search,
             const ApiConfigSection &api,
             const httplib::Request &req,
-            httplib::Response &res
+            httplib::Response &res,
+            bool dev_mode = false
     );
 
     void handleGetDocuments(
             InvertedIndex &index,
             const ApiConfigSection &api,
             const httplib::Request &req,
-            httplib::Response &res
+            httplib::Response &res,
+            bool dev_mode = false
     );
 
-    void handlePostDocuments(InvertedIndex &index, const httplib::Request &req, httplib::Response &res);
+    void handlePostDocuments(
+            InvertedIndex &index,
+            const httplib::Request &req,
+            httplib::Response &res,
+            bool dev_mode = false
+    );
 
 } // namespace fulltext_search_service

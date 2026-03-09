@@ -1,5 +1,6 @@
 #include "api_server.hpp"
 #include "config.hpp"
+#include "utils.hpp"
 #include "inverted_index.hpp"
 #include <exception>
 #include <print>
@@ -20,9 +21,20 @@ namespace {
         return std::nullopt;
     }
 
+    bool get_dev_mode(int argc, char *argv[]) {
+        for (int i = 1; i < argc; ++i) {
+            if (std::string_view(argv[i]) == "--dev") {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
 } // namespace
 
 int main(int argc, char *argv[]) {
+    const bool dev_mode = get_dev_mode(argc, argv);
     try {
         using namespace fulltext_search_service;
 
@@ -34,34 +46,47 @@ int main(int argc, char *argv[]) {
                 std::println(stderr, "Укажите путь к конфиг-файлу: --config=<файл>");
                 return 1;
             }
-            if (auto loaded = LoadConfig(*path_opt)) {
+            if (auto loaded = LoadConfig(*path_opt, dev_mode)) {
                 config = std::move(*loaded);
             } else {
+                Log(dev_mode, "[dev] не удалось загрузить config path={}", *path_opt);
                 std::println(stderr, "Не удалось загрузить конфиг из: {}", *path_opt);
                 return 1;
             }
         } else {
-            if (auto loaded = LoadConfig(kDefaultConfigPath)) {
+            if (auto loaded = LoadConfig(kDefaultConfigPath, dev_mode)) {
                 config = std::move(*loaded);
             } else {
+                Log(dev_mode, "[dev] не удалось загрузить config path={}", kDefaultConfigPath);
                 std::println(stderr, "Не удалось загрузить конфиг из: {}", kDefaultConfigPath);
                 return 1;
             }
         }
 
+        if (dev_mode) {
+            config.index.storage_path = "./data";
+            config.dev_mode = true;
+            Log(true, "[dev] config path={}", config.index.storage_path);
+        }
+
         InvertedIndex index;
         index.SetStoragePath(config.index.storage_path);
         index.SetMaxWordLength(config.index.max_word_length);
+        index.SetDevMode(config.dev_mode);
         if (!index.Load()) {
+            Log(config.dev_mode, "[dev] не удалось загрузить index");
             std::println(stderr, "Не удалось загрузить индекс.");
         }
 
-        ApiServer api(index, config.api, config.server, config.index);
+        ApiServer api(index, config.api, config.server, config.index, config.dev_mode);
         if (!api.listen(config.server.host, config.server.port)) {
+            Log(config.dev_mode, "[dev] не удалось запустить listen");
             std::println(stderr, "Не удалось запустить http сервер.");
             return 1;
         }
+        Log(config.dev_mode, "[dev] listen {}:{}", config.server.host, config.server.port);
     } catch (const std::exception &ex) {
+        fulltext_search_service::Log(dev_mode, "[dev] exception {}", ex.what());
         std::println(stderr, "Ошибка: {}", ex.what());
         return 1;
     }

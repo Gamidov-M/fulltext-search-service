@@ -40,9 +40,10 @@ namespace fulltext_search_service {
         ServerConfig server;
         IndexConfig index;
         ApiConfigSection api;
+        bool dev_mode = false;
     };
 
-    [[nodiscard]] std::optional<AppConfig> LoadConfig(const std::string &config_path);
+    [[nodiscard]] std::optional<AppConfig> LoadConfig(const std::string &config_path, bool dev_mode = false);
 
     [[nodiscard]] AppConfig DefaultConfig();
 

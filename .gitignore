@@ -1,5 +1,5 @@
 .idea/
 build/
 cmake-build-debug/
-index-data/
+data/
 third_party/

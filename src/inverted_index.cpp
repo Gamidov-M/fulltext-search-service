@@ -1,4 +1,5 @@
 #include "inverted_index.hpp"
+#include "utils.hpp"
 #include "tokenizer.hpp"
 #include <algorithm>
 #include <cstdint>
@@ -44,10 +45,17 @@ namespace fulltext_search_service {
         }
     }
 
+    void InvertedIndex::SetDevMode(bool dev) {
+        dev_mode_ = dev;
+    }
+
     bool InvertedIndex::Load() {
         if (storage_path_.empty()) {
+            Log(dev_mode_, "[dev] inverted_index::Load: путь к хранилищу не задан");
             return false;
         }
+
+        Log(dev_mode_, "[dev] inverted_index::Load: path={}", storage_path_);
 
         namespace fs = std::filesystem;
         fs::path dir(storage_path_);
@@ -56,58 +64,73 @@ namespace fulltext_search_service {
 
         // нет данных - считаем успехом (пустой индекс)
         if (!fs::exists(docs_path) || !fs::exists(dict_path)) {
+            Log(dev_mode_, "[dev] inverted_index::Load: файлы индекса отсутствуют, пустой индекс");
             return true;
         }
 
         std::ifstream docs_in(docs_path, std::ios::binary);
         std::ifstream dict_in(dict_path, std::ios::binary);
         if (!docs_in || !dict_in) {
+            Log(dev_mode_, "[dev] inverted_index::Load: не удалось открыть файлы (docs={} dict={})", docs_path.string(), dict_path.string());
             return false;
         }
 
-        // Формат docs.dat num_docs (uint64), затем для каждого doc - length (uint64), затем байты текста
+
+        // docs.dat - читаем формат [uint64 num_docs] [для каждого doc - uint64 len, len байт UTF-8 текста]
+        Log(dev_mode_, "[dev] inverted_index::Load: docs.dat - формат: uint64 num_docs, затем для каждого doc - uint64 len, len байт текста");
         uint64_t num_docs = 0;
         if (!read_raw(docs_in, num_docs)) {
+            Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения num_docs из docs.dat");
             return false;
         }
+        Log(dev_mode_, "[dev] inverted_index::Load: прочитали num_docs={}", num_docs);
 
         docs_.clear();
         docs_.reserve(static_cast<size_t>(num_docs));
         for (uint64_t i = 0; i < num_docs; ++i) {
             uint64_t len = 0;
             if (!read_raw(docs_in, len)) {
+                Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения длины doc #{}", i);
                 return false;
             }
 
             std::string doc(static_cast<size_t>(len), '\0');
             if (len && !docs_in.read(doc.data(), static_cast<std::streamsize>(len))) {
+                Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения тела doc #{}", i);
                 return false;
             }
 
             docs_.push_back(std::move(doc));
         }
+        Log(dev_mode_, "[dev] inverted_index::Load: этап docs.dat завершён - загружено {} документов", docs_.size());
 
-        // Формат dict.dat num_terms (uint64), для каждого термина - word_len, word bytes, num_postings, затем (doc_id, count)
+        // dict.dat - читаем формат [uint64 num_terms] [для каждого термина: uint64 word_len, word_len байт, uint64 num_postings, для каждого постинга: uint64 doc_id, uint64 count]
+        Log(dev_mode_, "[dev] inverted_index::Load: dict.dat - формат uint64 num_terms, для каждого термина uint64 word_len, word_len байт, uint64 num_postings, затем (uint64 doc_id, uint64 count) * num_postings");
         uint64_t num_terms = 0;
         if (!read_raw(dict_in, num_terms)) {
+            Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения num_terms из dict.dat");
             return false;
         }
+        Log(dev_mode_, "[dev] inverted_index::Load: прочитали num_terms={}", num_terms);
 
         freq_dictionary_.clear();
         freq_dictionary_.reserve(static_cast<size_t>(num_terms));
         for (uint64_t t = 0; t < num_terms; ++t) {
             uint64_t word_len = 0;
             if (!read_raw(dict_in, word_len)) {
+                Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения word_len для термина #{}", t);
                 return false;
             }
 
             std::string word(static_cast<size_t>(word_len), '\0');
             if (word_len && !dict_in.read(word.data(), static_cast<std::streamsize>(word_len))) {
+                Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения слова для термина #{}", t);
                 return false;
             }
 
             uint64_t num_postings = 0;
             if (!read_raw(dict_in, num_postings)) {
+                Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения num_postings для термина #{}", t);
                 return false;
             }
 
@@ -116,6 +139,7 @@ namespace fulltext_search_service {
             for (uint64_t p = 0; p < num_postings; ++p) {
                 uint64_t doc_id = 0, count = 0;
                 if (!read_raw(dict_in, doc_id) || !read_raw(dict_in, count)) {
+                    Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения постинга (термин #{} posting #{})", t, p);
                     return false;
                 }
 
@@ -123,17 +147,22 @@ namespace fulltext_search_service {
             }
             freq_dictionary_[std::move(word)] = std::move(list);
         }
+        Log(dev_mode_, "[dev] inverted_index::Load: этап dict.dat завершён. Итого: {} docs, {} терминов", docs_.size(), freq_dictionary_.size());
         return true;
     }
 
     bool InvertedIndex::Save() const {
         if (storage_path_.empty()) {
+            Log(dev_mode_, "[dev] inverted_index::Save: путь к хранилищу не задан");
             return false;
         }
+
+        Log(dev_mode_, "[dev] inverted_index::Save: path={}", storage_path_);
 
         namespace fs = std::filesystem;
         fs::path dir(storage_path_);
         if (!fs::exists(dir) && !fs::create_directories(dir)) {
+            Log(dev_mode_, "[dev] inverted_index::Save: не удалось создать каталог {}", dir.string());
             return false;
         }
 
@@ -142,13 +171,17 @@ namespace fulltext_search_service {
         std::ofstream docs_out(docs_path, std::ios::binary);
         std::ofstream dict_out(dict_path, std::ios::binary);
         if (!docs_out || !dict_out) {
+            Log(dev_mode_, "[dev] inverted_index::Save: не удалось открыть файлы для записи (docs={} dict={})", docs_path.string(), dict_path.string());
             return false;
         }
 
+        // docs.dat - сохраняем в формате [uint64 num_docs] [для каждого doc - uint64 len, len байт UTF-8 текста]
+        Log(dev_mode_, "[dev] inverted_index::Save: docs.dat - формат записи uint64 num_docs, затем для каждого doc uint64 len, len байт текста");
         const uint64_t num_docs = static_cast<uint64_t>(docs_.size());
         if (!write_raw(docs_out, num_docs)) {
             return false;
         }
+        Log(dev_mode_, "[dev] inverted_index::Save: записали num_docs={}", num_docs);
 
         for (const auto &doc: docs_) {
             const uint64_t len = static_cast<uint64_t>(doc.size());
@@ -160,11 +193,15 @@ namespace fulltext_search_service {
                 return false;
             }
         }
+        Log(dev_mode_, "[dev] inverted_index::Save: этап docs.dat завершён - записано {} документов", docs_.size());
 
+        // dict.dat - сохраняем в формате [uint64 num_terms] [для каждого термина uint64 word_len, word_len байт, uint64 num_postings, (uint64 doc_id, uint64 count) * num_postings]
+        Log(dev_mode_, "[dev] inverted_index::Save: dict.dat - формат записи: uint64 num_terms, для каждого термина: uint64 word_len, word_len байт, uint64 num_postings, затем (uint64 doc_id, uint64 count) * num_postings");
         const uint64_t num_terms = static_cast<uint64_t>(freq_dictionary_.size());
         if (!write_raw(dict_out, num_terms)) {
             return false;
         }
+        Log(dev_mode_, "[dev] inverted_index::Save: записали num_terms={}", num_terms);
 
         for (const auto &[word, list]: freq_dictionary_) {
             const uint64_t word_len = static_cast<uint64_t>(word.size());
@@ -189,11 +226,13 @@ namespace fulltext_search_service {
                 }
             }
         }
+        Log(dev_mode_, "[dev] inverted_index::Save: этап dict.dat завершён. Итого сохранено - {} docs, {} терминов", docs_.size(), freq_dictionary_.size());
         return true;
     }
 
     void InvertedIndex::UpdateDocumentBase(std::vector<std::string> input_docs) {
         if (input_docs.empty()) {
+            Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: очистка базы документов");
             docs_.clear();
             freq_dictionary_.clear();
             Save();
@@ -201,7 +240,7 @@ namespace fulltext_search_service {
         }
         docs_ = std::move(input_docs);
         const size_t num_docs = docs_.size();
-
+        Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: вход - вектор из {} документов (std::vector<std::string>), каждый документ - строка в UTF-8", num_docs);
 
         // Число потоков = min(документы, ядра)
         // токенизация - tokenizer::tokenize()
@@ -209,6 +248,7 @@ namespace fulltext_search_service {
                 static_cast<unsigned>(num_docs),
                 std::max(1u, std::thread::hardware_concurrency())
         );
+        Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: потоков = {}", num_workers);
         std::vector<Dict> per_thread_dicts(num_workers);
         std::vector<std::jthread> workers;
         workers.reserve(num_workers);
@@ -231,6 +271,8 @@ namespace fulltext_search_service {
 
         workers.clear();
 
+        Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: слияние - объединяем per-thread словари (термин -> vector<Entry>) в один - Entry = (doc_id, count)");
+
         // Слияние локальных словарей потоков в один freq_dictionary_
         // Один документ обрабатывается ровно одним потоком (stride)
         // дубликатов doc_id в постингах нет
@@ -243,13 +285,16 @@ namespace fulltext_search_service {
         }
 
         // Сортируем постинги по doc_id, чтобы GetWordCount возвращал готовый порядок без копирования
+        Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: сортировка постингов по doc_id внутри каждого термина");
         for (auto &[word, list]: new_dict) {
             std::ranges::sort(list, {}, &Entry::doc_id);
         }
 
         freq_dictionary_ = std::move(new_dict);
+        Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: индекс в памяти map<термин, vector<(doc_id, count)>>, {} терминов", freq_dictionary_.size());
 
         Save();
+        Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: готово");
     }
 
     const std::vector<Entry> &InvertedIndex::GetWordCount(std::string_view word) const {

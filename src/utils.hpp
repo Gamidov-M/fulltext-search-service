@@ -3,6 +3,7 @@
 #include <charconv>
 #include <nlohmann/json.hpp>
 #include <httplib.h>
+#include <iostream>
 
 namespace fulltext_search_service {
 
@@ -26,6 +27,13 @@ namespace fulltext_search_service {
         }
 
         return std::clamp(value, min_val, max_val);
+    }
+
+    template<typename... Args>
+    void Log(bool dev, std::format_string<Args...> fmt, Args &&... args) {
+        if (dev) {
+            std::println(std::cerr, fmt, std::forward<Args>(args)...);
+        }
     }
 
 } // namespace fulltext_search_service

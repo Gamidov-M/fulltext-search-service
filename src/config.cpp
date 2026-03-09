@@ -1,4 +1,5 @@
 #include "config.hpp"
+#include "utils.hpp"
 #include <fstream>
 #include <yaml-cpp/yaml.h>
 
@@ -69,14 +70,16 @@ namespace fulltext_search_service {
 
     } // namespace
 
-    std::optional <AppConfig> LoadConfig(const std::string &config_path) {
+    std::optional <AppConfig> LoadConfig(const std::string &config_path, bool dev_mode) {
         try {
             YAML::Node root = YAML::LoadFile(config_path);
             if (!root.IsMap()) {
                 return std::nullopt;
             }
 
-            return from_yaml(root);
+            auto cfg = from_yaml(root);
+            Log(dev_mode, "[dev] config загружен path={} host={} port={}", config_path, cfg.server.host, cfg.server.port);
+            return cfg;
         } catch (const YAML::Exception &) {
             return std::nullopt;
         } catch (const std::exception &) {

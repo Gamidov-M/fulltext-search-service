@@ -1,6 +1,6 @@
 #include "api_server.hpp"
 #include "api_handlers.hpp"
-#include "response_utils.hpp"
+#include "utils.hpp"
 #include <print>
 
 // Размер пула потоков cpp-httplib
@@ -17,10 +17,12 @@ namespace fulltext_search_service {
             InvertedIndex &index,
             const ApiConfigSection &api_config,
             const ServerConfig &server_config,
-            const IndexConfig &index_config
+            const IndexConfig &index_config,
+            bool dev_mode
     ) : index_(index), api_config_(api_config), server_config_(server_config),
         index_config_(index_config),
-        search_(std::make_unique<Search>(index, static_cast<std::size_t>(index_config.max_word_length))),
+        dev_mode_(dev_mode),
+        search_(std::make_unique<Search>(index, static_cast<std::size_t>(index_config.max_word_length), dev_mode)),
         server_(std::make_unique<httplib::Server>()) {
         server_->set_keep_alive_max_count(server_config_.keep_alive_max_count);
         setupRoutes();
@@ -30,16 +32,20 @@ namespace fulltext_search_service {
 
     void ApiServer::setupRoutes() {
         server_->Post("/indexes/search", [this](const httplib::Request &req, httplib::Response &res) {
-            handleSearch(index_, *search_, api_config_, req, res);
+            Log(dev_mode_, "[dev] {} {}", req.method, req.path);
+            handleSearch(index_, *search_, api_config_, req, res, dev_mode_);
         });
         server_->Get("/indexes/documents", [this](const httplib::Request &req, httplib::Response &res) {
-            handleGetDocuments(index_, api_config_, req, res);
+            Log(dev_mode_, "[dev] {} {}", req.method, req.path);
+            handleGetDocuments(index_, api_config_, req, res, dev_mode_);
         });
         server_->Post("/indexes/documents", [this](const httplib::Request &req, httplib::Response &res) {
-            handlePostDocuments(index_, req, res);
+            Log(dev_mode_, "[dev] {} {}", req.method, req.path);
+            handlePostDocuments(index_, req, res, dev_mode_);
         });
-        server_->set_error_handler([](const httplib::Request &, httplib::Response &res) {
+        server_->set_error_handler([this](const httplib::Request &req, httplib::Response &res) {
             if (res.status == 404) {
+                Log(dev_mode_, "[dev] 404 path={}", req.path);
                 sendJson(res, 404, {
                         {"message", "Не найдено"},
                         {"code",    "not_found"}

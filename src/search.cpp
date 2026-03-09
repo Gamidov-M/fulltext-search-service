@@ -1,4 +1,5 @@
 #include "search.hpp"
+#include "utils.hpp"
 #include "tokenizer.hpp"
 #include <algorithm>
 #include <mutex>
@@ -74,6 +75,7 @@ namespace fulltext_search_service {
                 static_cast<unsigned>(queries.size()),
                 std::max(1u, std::thread::hardware_concurrency())
         );
+        Log(dev_mode_, "[dev] search queries={} workers={}", queries.size(), num_workers);
         std::mutex result_mutex;
         std::vector <std::jthread> workers;
         workers.reserve(num_workers);

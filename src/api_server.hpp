@@ -18,7 +18,8 @@ namespace fulltext_search_service {
         ApiServer(InvertedIndex &index,
                   const ApiConfigSection &api_config,
                   const ServerConfig &server_config,
-                  const IndexConfig &index_config
+                  const IndexConfig &index_config,
+                  bool dev_mode = false
         );
 
         ~ApiServer();
@@ -41,6 +42,8 @@ namespace fulltext_search_service {
         ServerConfig server_config_;
 
         IndexConfig index_config_;
+
+        bool dev_mode_ = false;
 
         std::unique_ptr <Search> search_;
 

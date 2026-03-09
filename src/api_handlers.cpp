@@ -1,5 +1,5 @@
 #include "api_handlers.hpp"
-#include "response_utils.hpp"
+#include "utils.hpp"
 #include <chrono>
 #include <nlohmann/json.hpp>
 
@@ -10,12 +10,14 @@ namespace fulltext_search_service {
             Search &search,
             const ApiConfigSection &api,
             const httplib::Request &req,
-            httplib::Response &res
+            httplib::Response &res,
+            bool dev_mode
     ) {
         nlohmann::json body;
         try {
             body = nlohmann::json::parse(req.body.empty() ? "{}" : req.body);
         } catch (const nlohmann::json::exception &) {
+            Log(dev_mode, "[dev] search: неверный json");
             sendJson(res, 400, {
                     {"message", "Некорректный JSON"},
                     {"code",    "invalid_request"}
@@ -53,6 +55,7 @@ namespace fulltext_search_service {
                     }
             );
         }
+        Log(dev_mode, "[dev] search q=\"{}\" hits={}", query, full_list.size());
         sendJson(res, 200, {
                 {"hits",               hits},
                 {"offset",             offset},
@@ -67,7 +70,8 @@ namespace fulltext_search_service {
             InvertedIndex &index,
             const ApiConfigSection &api,
             const httplib::Request &req,
-            httplib::Response &res
+            httplib::Response &res,
+            bool dev_mode
     ) {
         const size_t total = index.GetDocumentCount();
         const int offset = parseQueryInt(req, "offset", 0, 0, api.max_offset);
@@ -81,6 +85,7 @@ namespace fulltext_search_service {
                     }
             );
         }
+        Log(dev_mode, "[dev] docs offset={} limit={} total={}", offset, limit, total);
         sendJson(res, 200, {
                 {"results", results},
                 {"offset",  offset},
@@ -92,9 +97,11 @@ namespace fulltext_search_service {
     void handlePostDocuments(
             InvertedIndex &index,
             const httplib::Request &req,
-            httplib::Response &res
+            httplib::Response &res,
+            bool dev_mode
     ) {
         if (req.body.empty()) {
+            Log(dev_mode, "[dev] post: пустое тело");
             sendJson(res, 400, {
                     {"message", "Тело запроса пусто"},
                     {"code",    "invalid_request"}
@@ -106,6 +113,7 @@ namespace fulltext_search_service {
         try {
             body = nlohmann::json::parse(req.body);
         } catch (const nlohmann::json::exception &) {
+            Log(dev_mode, "[dev] post: неверный json");
             sendJson(res, 400, {
                     {"message", "Некорректный JSON"},
                     {"code",    "invalid_request"}
@@ -114,6 +122,7 @@ namespace fulltext_search_service {
         }
 
         if (!body.is_array()) {
+            Log(dev_mode, "[dev] post: не массив");
             sendJson(res, 400, {
                     {"message", "JSON должно быть массивом документов"},
                     {"code",    "invalid_request"}
@@ -125,6 +134,7 @@ namespace fulltext_search_service {
         documents.reserve(body.size());
         for (auto &item: body) {
             if (!item.is_object()) {
+                Log(dev_mode, "[dev] post: элемент не объект");
                 sendJson(res, 400, {
                         {"message", "Каждый документ должен быть JSON-объектом с полем content"},
                         {"code",    "invalid_request"}
@@ -134,6 +144,7 @@ namespace fulltext_search_service {
 
             auto it = item.find("content");
             if (it == item.end() || !it->is_string()) {
+                Log(dev_mode, "[dev] post: нет content");
                 sendJson(res, 400, {
                         {"message", "У каждого документа должно быть строковое поле content"},
                         {"code",    "invalid_request"}
@@ -144,6 +155,7 @@ namespace fulltext_search_service {
         }
 
         const int received = static_cast<int>(documents.size());
+        Log(dev_mode, "[dev] post received={}", received);
         index.UpdateDocumentBase(std::move(documents));
         sendJson(res, 202, {
                 {"received", received}
