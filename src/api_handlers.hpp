@@ -31,4 +31,25 @@ namespace fulltext_search_service {
             bool dev_mode = false
     );
 
+    void handleGetScheme(
+            InvertedIndex &index,
+            const httplib::Request &req,
+            httplib::Response &res,
+            bool dev_mode = false
+    );
+
+    void handlePostScheme(
+            InvertedIndex &index,
+            const httplib::Request &req,
+            httplib::Response &res,
+            bool dev_mode = false
+    );
+
+    void handleDeleteScheme(
+            InvertedIndex &index,
+            const httplib::Request &req,
+            httplib::Response &res,
+            bool dev_mode = false
+    );
+
 } // namespace fulltext_search_service

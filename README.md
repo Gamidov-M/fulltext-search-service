@@ -11,10 +11,13 @@
 - [x] Конфигурация через конфиг-файл и systemd конфиг
 - [x] Логирование (флаг --dev) и Dockerfile
 - [x] Ранжирование BM25
+- [x] Rate limiting и лимиты размера запросов
+- [x] Схема документов
+- [x] Документы как объект по схеме
+- [x] Индексация для поиска только по строковым полям схемы
 
 ### Планируется
 
-- [ ] Rate limiting и лимиты размера запросов
 - [ ] Стоп-слова при индексации и в запросе
 - [ ] Стемминг или лемматизация (нормализация словоформ)
 - [ ] Подсветка совпадений (snippets/highlight) в результатах поиска
@@ -31,7 +34,7 @@
 - GCC 14
 - CMake 3.22
 - Git (для загрузки сторонних библиотек через FetchContent)
-- make или ninja (система сборки обычно входит в build-essential)
+- make (по умолчанию, входит в build-essential) или ninja (опционально: cmake -G Ninja -B build)
 
 При первой конфигурации CMake скачивает исходники зависимостей (nlohmann/json, cpp-httplib, yaml-cpp) в каталог
 third_party
@@ -94,25 +97,66 @@ docker run --rm -p 8000:8000 -v $(pwd)/data:/var/lib/fulltext-search-service ful
 
 ## API
 
-### Загрузка документов
+### Схема
+
+Перед загрузкой документов нужно создать схему
+Поддерживаются типы полей int, string
+Строковые поля индексируются для поиска
+
+#### Создать схему
 
 ```bash
-curl -X POST 'http://127.0.0.1:8000/indexes/documents' \
+curl -X POST 'http://127.0.0.1:8000/indexes/schemes' \
   -H 'Content-Type: application/json' \
-  -d '[{"content": "первый документ"}, {"content": "второй документ"}]'
+  -d '{"fields": [{ "name": "id", "type": "int" }, { "name": "name", "type": "string" }]}'
 ```
-
-Индекс пересобирается по загруженному набору
-
-| Поле      | Тип    | Описание        |
-|-----------|--------|-----------------|
-| `content` | string | Текст документа |
 
 Пример ответа
 
 ```json
 {
-    "received": 2
+  "fields": [
+    {
+      "name": "id",
+      "type": "int"
+    },
+    {
+      "name": "name",
+      "type": "string"
+    }
+  ]
+}
+```
+
+#### Получить схему
+
+```bash
+curl 'http://127.0.0.1:8000/indexes/schemes'
+```
+
+#### Удалить схему
+
+```bash
+curl -X DELETE 'http://127.0.0.1:8000/indexes/schemes'
+```
+
+### Загрузка документов
+
+```bash
+curl -X POST 'http://127.0.0.1:8000/indexes/documents' \
+  -H 'Content-Type: application/json' \
+  -d '[{"content": {"id": 1, "name": "Первый документ"}}, {"content": {"id": 2, "name": "Второй документ"}}]'
+```
+
+| Поле      | Тип    | Описание                        |
+|-----------|--------|---------------------------------|
+| `content` | object | Объект по схеме (поля из схемы) |
+
+Пример ответа
+
+```json
+{
+  "received": 2
 }
 ```
 
@@ -124,26 +168,32 @@ curl 'http://127.0.0.1:8000/indexes/documents?offset=0&limit=10'
 
 | Параметр | По умолчанию | Описание |
 |----------|--------------|----------|
-| `limit`  | int          | 20       | до 100   |
-| `offset` | int          | 0        |          |
+| `limit`  | int          | до 100   |
+| `offset` | int          | 0        |
 
 Пример ответа
 
 ```json
 {
-    "results": [
-        {
-            "id": 0,
-            "content": "текст первого документа"
-        },
-        {
-            "id": 1,
-            "content": "текст второго документа"
-        }
-    ],
-    "limit": 10,
-    "offset": 0,
-    "total": 2
+  "results": [
+    {
+      "id": 0,
+      "content": {
+        "id": 1,
+        "name": "Первый документ"
+      }
+    },
+    {
+      "id": 1,
+      "content": {
+        "id": 2,
+        "name": "Второй документ"
+      }
+    }
+  ],
+  "limit": 10,
+  "offset": 0,
+  "total": 2
 }
 ```
 
@@ -152,7 +202,7 @@ curl 'http://127.0.0.1:8000/indexes/documents?offset=0&limit=10'
 ```bash
 curl -X POST 'http://127.0.0.1:8000/indexes/search' \
   -H 'Content-Type: application/json' \
-  -d '{"q": "второго", "limit": 5}'
+  -d '{"q": "Второй", "limit": 5, "offset": 0}'
 ```
 
 | Параметр | Тип    | По умолчанию | Описание |
@@ -165,17 +215,23 @@ curl -X POST 'http://127.0.0.1:8000/indexes/search' \
 
 ```json
 {
-    "hits": [
-        {
-            "id": 0,
-            "content": "текст второго документа",
-            "_rankingScore": 1.0
-        }
-    ],
-    "limit": 5,
-    "offset": 0,
-    "estimatedTotalHits": 1,
-    "processingTimeMs": 0,
-    "query": "второго"
+  "results": [
+    {
+      "id": 0,
+      "content": {
+        "id": 2,
+        "name": "Второй документ"
+      },
+      "_rankingScore": 0.95
+    }
+  ],
+  "limit": 5,
+  "offset": 0,
+  "total": 1,
+  "processingTimeMs": 2,
+  "query": "Второй"
 }
 ```
+
+_rankingScore - по формуле BM25 учитываются частоты слов в документе (tf), редкость слов в коллекции (idf), длина документа
+processingTimeMs - время обработки запроса на сервере в миллисекундах

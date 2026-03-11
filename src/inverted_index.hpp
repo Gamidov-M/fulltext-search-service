@@ -1,6 +1,7 @@
 #pragma once
 
 #include "types.hpp"
+#include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -47,17 +48,36 @@ namespace fulltext_search_service {
         // Вызывается автоматически после UpdateDocumentBase
         bool Save() const;
 
+        // Схема: типы полей (int, string)
+        // Строковые поля индексируются для поиска
+        void SetSchema(Schema schema);
+
+        // Сохраняет схему
+        bool SaveSchema() const;
+        [[nodiscard]] const Schema &GetSchema() const noexcept {
+            return schema_;
+        }
+
+        [[nodiscard]] bool HasSchema() const noexcept {
+            return !schema_.fields.empty();
+        }
+
+        // Входной документ объект по схеме (content как json объект)
+        struct DocumentInput {
+            nlohmann::json content;
+        };
+
         // Полная замена базы документов
         // пересчёт индекса в пуле потоков и сохранение на диск
-        void UpdateDocumentBase(std::vector<std::string> input_docs);
+        void UpdateDocumentBase(std::vector<DocumentInput> input_docs);
 
         // Список постов отсортирован по doc_id
         // Ссылка валидна до следующей модификации индекса
         [[nodiscard]] const std::vector<Entry> &GetWordCount(std::string_view word) const;
 
-        // Текст документа по идентификатору
-        // пустая строка при неверном doc_id
-        [[nodiscard]] std::string GetDocument(size_t doc_id) const;
+        // Документ (content-объект) по идентификатору
+        // пустой объект при неверном doc_id
+        [[nodiscard]] const nlohmann::json &GetDocument(size_t doc_id) const;
 
         [[nodiscard]] size_t GetDocumentCount() const noexcept {
             return docs_.size();
@@ -72,13 +92,17 @@ namespace fulltext_search_service {
         [[nodiscard]] double GetAverageDocumentLength() const noexcept;
 
     private:
+        // Собирает строку для полнотекстового поиска из полей типа string в content по схеме
+        [[nodiscard]] std::string buildSearchableText(const nlohmann::json &content) const;
+
         // Частотный словарь слово -> список (doc_id, количество вхождений)
         using Dict = std::unordered_map<std::string, std::vector<Entry>, TransparentStringHash, TransparentStringEqual>;
 
         std::string storage_path_;
         int max_word_length_ = 100;
         bool dev_mode_ = false;
-        std::vector<std::string> docs_;
+        Schema schema_;
+        std::vector<nlohmann::json> docs_;
         std::vector<size_t> doc_lengths_;
         Dict freq_dictionary_;
     };

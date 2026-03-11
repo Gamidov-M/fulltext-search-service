@@ -15,6 +15,9 @@ namespace fulltext_search_service {
         constexpr const char *kDocsFilename = "docs.dat";
         constexpr const char *kDictFilename = "dict.dat";
         constexpr const char *kDocLengthsFilename = "doc_lengths.dat";
+        constexpr const char *kSchemeFilename = "scheme.dat";
+        constexpr uint8_t kFieldTypeInt = 0;
+        constexpr uint8_t kFieldTypeString = 1;
 
         // Пустой вектор для возврата из GetWordCount при отсутствии слова (короче избегаем аллокаций)
         const std::vector<Entry> kEmptyPostings;
@@ -50,6 +53,83 @@ namespace fulltext_search_service {
         dev_mode_ = dev;
     }
 
+    void InvertedIndex::SetSchema(Schema schema) {
+        schema_ = std::move(schema);
+    }
+
+    std::string InvertedIndex::buildSearchableText(const nlohmann::json &content) const {
+        if (!content.is_object()) {
+            return {};
+        }
+
+        std::string result;
+        for (const auto &field: schema_.fields) {
+            if (field.type != "string") {
+                continue;
+            }
+
+            auto it = content.find(field.name);
+            if (it == content.end() || !it->is_string()) {
+                continue;
+            }
+
+            const std::string &s = it->get<std::string>();
+            if (!result.empty()) {
+                result += ' ';
+            }
+
+            result += s;
+        }
+
+        return result;
+    }
+
+    bool InvertedIndex::SaveSchema() const {
+        if (storage_path_.empty()) {
+            return true;
+        }
+
+        namespace fs = std::filesystem;
+        fs::path scheme_path = fs::path(storage_path_) / kSchemeFilename;
+        if (schema_.fields.empty()) {
+            if (fs::exists(scheme_path)) {
+                std::error_code ec;
+                fs::remove(scheme_path, ec);
+            }
+            return true;
+        }
+
+        fs::path dir(storage_path_);
+        if (!fs::exists(dir) && !fs::create_directories(dir)) {
+            return false;
+        }
+
+        std::ofstream scheme_out(scheme_path, std::ios::binary);
+        if (!scheme_out) {
+            return false;
+        }
+
+        const uint64_t num_fields = static_cast<uint64_t>(schema_.fields.size());
+        if (!write_raw(scheme_out, num_fields)) {
+            return false;
+        }
+
+        for (const auto &f : schema_.fields) {
+            const uint8_t type_byte = (f.type == "int") ? kFieldTypeInt : kFieldTypeString;
+            if (!write_raw(scheme_out, type_byte)) {
+                return false;
+            }
+
+            const uint64_t name_len = static_cast<uint64_t>(f.name.size());
+            if (!write_raw(scheme_out, name_len) ||
+                (name_len && !scheme_out.write(f.name.data(), static_cast<std::streamsize>(name_len)))) {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
     bool InvertedIndex::Load() {
         if (storage_path_.empty()) {
             Log(dev_mode_, "[dev] inverted_index::Load: путь к хранилищу не задан");
@@ -63,47 +143,81 @@ namespace fulltext_search_service {
         fs::path docs_path = dir / kDocsFilename;
         fs::path dict_path = dir / kDictFilename;
 
-        // нет данных - считаем успехом (пустой индекс)
-        if (!fs::exists(docs_path) || !fs::exists(dict_path)) {
-            Log(dev_mode_, "[dev] inverted_index::Load: файлы индекса отсутствуют, пустой индекс");
+        // Загрузка схемы из scheme.dat
+        fs::path scheme_path = dir / kSchemeFilename;
+        if (fs::exists(scheme_path)) {
+            std::ifstream scheme_in(scheme_path, std::ios::binary);
+            if (scheme_in) {
+                uint64_t num_fields = 0;
+                if (read_raw(scheme_in, num_fields)) {
+                    schema_.fields.clear();
+                    schema_.fields.reserve(static_cast<size_t>(num_fields));
+                    for (uint64_t i = 0; i < num_fields; ++i) {
+                        uint8_t type_byte = 0;
+                        uint64_t name_len = 0;
+                        if (!read_raw(scheme_in, type_byte) || !read_raw(scheme_in, name_len)) {
+                            break;
+                        }
+
+                        std::string name(static_cast<size_t>(name_len), '\0');
+                        if (name_len && !scheme_in.read(name.data(), static_cast<std::streamsize>(name_len))) {
+                            break;
+                        }
+                        schema_.fields.push_back({std::move(name), type_byte == kFieldTypeInt ? "int" : "string"});
+                    }
+                    Log(dev_mode_, "[dev] inverted_index::Load: загружена схема, полей={}", schema_.fields.size());
+                }
+            }
+        }
+
+        if (schema_.fields.empty() || !fs::exists(docs_path) || !fs::exists(dict_path)) {
+            Log(dev_mode_, "[dev] inverted_index::Load: схема пуста или файлы индекса отсутствуют, пустой индекс");
             return true;
         }
 
         std::ifstream docs_in(docs_path, std::ios::binary);
         std::ifstream dict_in(dict_path, std::ios::binary);
         if (!docs_in || !dict_in) {
-            Log(dev_mode_, "[dev] inverted_index::Load: не удалось открыть файлы (docs={} dict={})", docs_path.string(), dict_path.string());
+            Log(dev_mode_, "[dev] inverted_index::Load: не удалось открыть файлы");
             return false;
         }
-
-
-        // docs.dat - читаем формат [uint64 num_docs] [для каждого doc - uint64 len, len байт UTF-8 текста]
-        Log(dev_mode_, "[dev] inverted_index::Load: docs.dat - формат: uint64 num_docs, затем для каждого doc - uint64 len, len байт текста");
-        uint64_t num_docs = 0;
-        if (!read_raw(docs_in, num_docs)) {
-            Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения num_docs из docs.dat");
-            return false;
-        }
-        Log(dev_mode_, "[dev] inverted_index::Load: прочитали num_docs={}", num_docs);
 
         docs_.clear();
-        docs_.reserve(static_cast<size_t>(num_docs));
-        for (uint64_t i = 0; i < num_docs; ++i) {
-            uint64_t len = 0;
-            if (!read_raw(docs_in, len)) {
-                Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения длины doc #{}", i);
+        if (!schema_.fields.empty()) {
+            uint64_t num_docs = 0;
+            if (!read_raw(docs_in, num_docs)) {
+                Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения num_docs из docs.dat");
                 return false;
             }
 
-            std::string doc(static_cast<size_t>(len), '\0');
-            if (len && !docs_in.read(doc.data(), static_cast<std::streamsize>(len))) {
-                Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения тела doc #{}", i);
-                return false;
-            }
+            docs_.reserve(static_cast<size_t>(num_docs));
+            for (uint64_t d = 0; d < num_docs; ++d) {
+                nlohmann::json doc = nlohmann::json::object();
+                for (const auto &field : schema_.fields) {
+                    if (field.type == "int") {
+                        int64_t val = 0;
+                        if (!read_raw(docs_in, val)) {
+                            Log(dev_mode_, "[dev] inverted_index::Load: ошибка чтения int поля {} doc {}", field.name, d);
+                            return false;
+                        }
+                        doc[field.name] = val;
+                    } else {
+                        uint64_t str_len = 0;
+                        if (!read_raw(docs_in, str_len)) {
+                            return false;
+                        }
 
-            docs_.push_back(std::move(doc));
+                        std::string s(static_cast<size_t>(str_len), '\0');
+                        if (str_len && !docs_in.read(s.data(), static_cast<std::streamsize>(str_len))) {
+                            return false;
+                        }
+                        doc[field.name] = std::move(s);
+                    }
+                }
+                docs_.push_back(std::move(doc));
+            }
+            Log(dev_mode_, "[dev] inverted_index::Load: загружено {} документов из docs.dat", docs_.size());
         }
-        Log(dev_mode_, "[dev] inverted_index::Load: этап docs.dat завершён - загружено {} документов", docs_.size());
 
         // doc_lengths.dat (опционально если нет вычислим из словаря после загрузки dict)
         doc_lengths_.clear();
@@ -213,32 +327,46 @@ namespace fulltext_search_service {
 
         fs::path docs_path = dir / kDocsFilename;
         fs::path dict_path = dir / kDictFilename;
-        std::ofstream docs_out(docs_path, std::ios::binary);
         std::ofstream dict_out(dict_path, std::ios::binary);
-        if (!docs_out || !dict_out) {
-            Log(dev_mode_, "[dev] inverted_index::Save: не удалось открыть файлы для записи (docs={} dict={})", docs_path.string(), dict_path.string());
+        if (!dict_out) {
+            Log(dev_mode_, "[dev] inverted_index::Save: не удалось открыть dict для записи");
             return false;
         }
 
-        // docs.dat - сохраняем в формате [uint64 num_docs] [для каждого doc - uint64 len, len байт UTF-8 текста]
-        Log(dev_mode_, "[dev] inverted_index::Save: docs.dat - формат записи uint64 num_docs, затем для каждого doc uint64 len, len байт текста");
+        SaveSchema();
+
+        // docs.dat - бинарный формат: uint64 num_docs, для каждого doc по полям схемы: int -> int64_t, string -> uint64_t len + bytes
+        std::ofstream docs_out(docs_path, std::ios::binary);
+        if (!docs_out) {
+            Log(dev_mode_, "[dev] inverted_index::Save: не удалось открыть docs.dat");
+            return false;
+        }
         const uint64_t num_docs = static_cast<uint64_t>(docs_.size());
         if (!write_raw(docs_out, num_docs)) {
             return false;
         }
-        Log(dev_mode_, "[dev] inverted_index::Save: записали num_docs={}", num_docs);
+        for (const auto &doc : docs_) {
+            for (const auto &field : schema_.fields) {
+                auto it = doc.find(field.name);
+                if (it == doc.end()) {
+                    continue;
+                }
 
-        for (const auto &doc: docs_) {
-            const uint64_t len = static_cast<uint64_t>(doc.size());
-            if (!write_raw(docs_out, len)) {
-                return false;
-            }
-
-            if (len && !docs_out.write(doc.data(), static_cast<std::streamsize>(len))) {
-                return false;
+                if (field.type == "int") {
+                    int64_t val = it->get<int64_t>();
+                    if (!write_raw(docs_out, val)) {
+                        return false;
+                    }
+                } else {
+                    const std::string &s = it->get<std::string>();
+                    const uint64_t len = static_cast<uint64_t>(s.size());
+                    if (!write_raw(docs_out, len) || (len && !docs_out.write(s.data(), static_cast<std::streamsize>(len)))) {
+                        return false;
+                    }
+                }
             }
         }
-        Log(dev_mode_, "[dev] inverted_index::Save: этап docs.dat завершён - записано {} документов", docs_.size());
+        Log(dev_mode_, "[dev] inverted_index::Save: записано {} документов в docs.dat", docs_.size());
 
         // dict.dat - сохраняем в формате [uint64 num_terms] [для каждого термина uint64 word_len, word_len байт, uint64 num_postings, (uint64 doc_id, uint64 count) * num_postings]
         Log(dev_mode_, "[dev] inverted_index::Save: dict.dat - формат записи: uint64 num_terms, для каждого термина: uint64 word_len, word_len байт, uint64 num_postings, затем (uint64 doc_id, uint64 count) * num_postings");
@@ -290,18 +418,27 @@ namespace fulltext_search_service {
         return true;
     }
 
-    void InvertedIndex::UpdateDocumentBase(std::vector<std::string> input_docs) {
+    void InvertedIndex::UpdateDocumentBase(std::vector<DocumentInput> input_docs) {
         if (input_docs.empty()) {
             Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: очистка базы документов");
             docs_.clear();
             freq_dictionary_.clear();
+            doc_lengths_.clear();
             Save();
             return;
         }
-        docs_ = std::move(input_docs);
+        docs_.clear();
+        docs_.reserve(input_docs.size());
+        std::vector<std::string> searchable_texts;
+        searchable_texts.reserve(input_docs.size());
+        for (auto &rec: input_docs) {
+            docs_.push_back(std::move(rec.content));
+            searchable_texts.push_back(buildSearchableText(docs_.back()));
+        }
+
         const size_t num_docs = docs_.size();
         doc_lengths_.resize(num_docs, 0);
-        Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: вход - вектор из {} документов (std::vector<std::string>), каждый документ - строка в UTF-8", num_docs);
+        Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: вход - вектор из {} документов", num_docs);
 
         // Число потоков = min(документы, ядра)
         // токенизация - tokenizer::tokenize()
@@ -316,13 +453,13 @@ namespace fulltext_search_service {
 
         // Каждый поток обрабатывает свою долю документов (doc_id % num_workers == t)
         for (unsigned t = 0; t < num_workers; ++t) {
-            workers.emplace_back([this, &per_thread_dicts, num_workers, t] {
+            workers.emplace_back([this, &searchable_texts, &per_thread_dicts, num_workers, t] {
                 Dict &local = per_thread_dicts[t];
                 auto indices = std::views::iota(static_cast<size_t>(t), docs_.size()) |
                                std::views::stride(static_cast<size_t>(num_workers));
                 for (size_t doc_id: indices) {
                     std::unordered_map<std::string, size_t> word_count;
-                    tokenize(docs_[doc_id], word_count, static_cast<std::size_t>(max_word_length_));
+                    tokenize(searchable_texts[doc_id], word_count, static_cast<std::size_t>(max_word_length_));
                     size_t doc_len = 0;
                     for (auto &[w, count]: word_count) {
                         doc_len += count;
@@ -371,9 +508,10 @@ namespace fulltext_search_service {
         return it->second;
     }
 
-    std::string InvertedIndex::GetDocument(size_t doc_id) const {
+    const nlohmann::json &InvertedIndex::GetDocument(size_t doc_id) const {
+        static const nlohmann::json kEmptyJson = nlohmann::json::object();
         if (doc_id >= docs_.size()) {
-            return {};
+            return kEmptyJson;
         }
 
         return docs_[doc_id];

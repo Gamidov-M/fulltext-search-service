@@ -3,8 +3,20 @@
 #include <cstddef>
 #include <cmath>
 #include <string>
+#include <vector>
 
 namespace fulltext_search_service {
+
+    // Поле схемы документа имя и тип (int или string)
+    struct SchemaField {
+        std::string name;
+        std::string type;
+    };
+
+    // Схема документа - список полей для валидации и индексации
+    struct Schema {
+        std::vector<SchemaField> fields;
+    };
 
     // Один постинг в инвертированном индексе: doc_id и количество вхождений термина в документе
     struct Entry {

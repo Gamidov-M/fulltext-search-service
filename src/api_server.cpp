@@ -41,8 +41,8 @@ namespace fulltext_search_service {
 
         std::string client_ip = req.remote_addr;
         if (client_ip.empty()) {
-            const char *v = req.get_header_value("REMOTE_ADDR");
-            client_ip = v ? v : "unknown";
+            std::string v = req.get_header_value("REMOTE_ADDR");
+            client_ip = v.empty() ? "unknown" : v;
         }
 
         if (!rate_limiter_.try_consume(client_ip)) {
@@ -78,6 +78,27 @@ namespace fulltext_search_service {
                 return;
             }
             handlePostDocuments(index_, req, res, dev_mode_);
+        });
+        server_->Get("/indexes/schemes", [this](const httplib::Request &req, httplib::Response &res) {
+            Log(dev_mode_, "[dev] {} {}", req.method, req.path);
+            if (!checkRateLimit(req, res)) {
+                return;
+            }
+            handleGetScheme(index_, req, res, dev_mode_);
+        });
+        server_->Post("/indexes/schemes", [this](const httplib::Request &req, httplib::Response &res) {
+            Log(dev_mode_, "[dev] {} {}", req.method, req.path);
+            if (!checkRateLimit(req, res)) {
+                return;
+            }
+            handlePostScheme(index_, req, res, dev_mode_);
+        });
+        server_->Delete("/indexes/schemes", [this](const httplib::Request &req, httplib::Response &res) {
+            Log(dev_mode_, "[dev] {} {}", req.method, req.path);
+            if (!checkRateLimit(req, res)) {
+                return;
+            }
+            handleDeleteScheme(index_, req, res, dev_mode_);
         });
         server_->set_error_handler([this](const httplib::Request &req, httplib::Response &res) {
             if (res.status == 404) {
