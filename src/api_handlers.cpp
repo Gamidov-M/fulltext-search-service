@@ -1,8 +1,11 @@
 #include "api_handlers.hpp"
+#include "highlight.hpp"
+#include "tokenizer.hpp"
 #include "utils.hpp"
 #include <chrono>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <unordered_set>
 
 namespace fulltext_search_service {
 
@@ -64,6 +67,33 @@ namespace fulltext_search_service {
         int limit = std::clamp(body.value("limit", api.max_responses), 1, api.max_limit);
         int offset = std::clamp(body.value("offset", 0), 0, api.max_offset);
 
+        const bool highlight_enabled = body.value("highlight", false);
+        std::string highlight_pre = "<em>";
+        std::string highlight_post = "</em>";
+        size_t snippet_length = 255;
+        std::string snippet_suffix = "...";
+        if (highlight_enabled && body.contains("highlight") && body["highlight"].is_object()) {
+            const auto &hl = body["highlight"];
+            if (hl.contains("pre") && hl["pre"].is_string()) {
+                highlight_pre = hl["pre"].get<std::string>();
+            }
+
+            if (hl.contains("post") && hl["post"].is_string()) {
+                highlight_post = hl["post"].get<std::string>();
+            }
+
+            if (hl.contains("snippet_length") && hl["snippet_length"].is_number_unsigned()) {
+                const auto v = hl["snippet_length"].get<std::size_t>();
+                if (v > 0) {
+                    snippet_length = v;
+                }
+            }
+
+            if (hl.contains("snippet_suffix") && hl["snippet_suffix"].is_string()) {
+                snippet_suffix = hl["snippet_suffix"].get<std::string>();
+            }
+        }
+
         const int request_size = std::min(
                 offset + limit,
                 api.max_offset + api.max_limit
@@ -76,6 +106,15 @@ namespace fulltext_search_service {
                 std::chrono::steady_clock::now() - start
         ).count();
 
+        std::unordered_set<std::string> query_terms;
+        if (highlight_enabled && !query.empty()) {
+            std::unordered_map<std::string, size_t> word_count;
+            tokenize(query, word_count, static_cast<std::size_t>(index_config.max_word_length));
+            for (const auto &[word, _] : word_count) {
+                query_terms.insert(word);
+            }
+        }
+
         const auto &full_list = results.empty() ? std::vector<RelativeIndex>{} : results[0];
         const size_t from = static_cast<size_t>(offset);
         const size_t to = std::min(from + static_cast<size_t>(limit), full_list.size());
@@ -83,13 +122,17 @@ namespace fulltext_search_service {
         nlohmann::json results_json = nlohmann::json::array();
         for (size_t i = from; i < to; ++i) {
             const auto &rel = full_list[i];
-            results_json.push_back(
-                    {
-                            {"id",            static_cast<int>(rel.doc_id)},
-                            {"content",       index->GetDocument(rel.doc_id)},
-                            {"_rankingScore", rel.rank}
-                    }
-            );
+            const nlohmann::json &content = index->GetDocument(rel.doc_id);
+            nlohmann::json item = {
+                    {"id",            static_cast<int>(rel.doc_id)},
+                    {"content",       content},
+                    {"_rankingScore", rel.rank}
+            };
+            if (highlight_enabled && !query_terms.empty() && index->HasCollection()) {
+                item["highlight"] = highlightContent(content, index->GetCollection(), query_terms, highlight_pre, highlight_post);
+                item["snippet"] = buildSnippet(content, index->GetCollection(), query_terms, snippet_length, snippet_suffix, highlight_pre, highlight_post);
+            }
+            results_json.push_back(std::move(item));
         }
         Log(dev_mode, "[dev] search index={} q=\"{}\" results={}", *name_opt, query, full_list.size());
         sendJson(res, 200, {
