@@ -42,7 +42,7 @@ namespace fulltext_search_service {
                 std::vector <RelativeIndex> &out
         ) {
             std::unordered_map <std::string, size_t> word_count;
-            tokenize(query, word_count, max_word_length);
+            tokenize(query, word_count, max_word_length, index.GetStemmer());
 
             const size_t N = index.GetDocumentCount();
             const double avgdl = index.GetAverageDocumentLength();
@@ -126,15 +126,17 @@ namespace fulltext_search_service {
         std::vector <std::jthread> workers;
         workers.reserve(num_workers);
 
-        // Каждый поток пишет только в results[i] для своих запросов; i совпадает с индексом запроса
+        // Каждый поток пишет только в results[i] для своих запросов - i совпадает с индексом запроса
+        // Для каждой итерации создаём новый вектор, чтобы не переиспользовать объект после std::move
+        const int safe_max_responses = std::max(max_responses, 1);
         for (unsigned t = 0; t < num_workers; ++t) {
-            workers.emplace_back([this, &queries, &results, &result_mutex, max_responses, num_workers, t] {
-                std::vector <RelativeIndex> local_list;
-                local_list.reserve(512);
+            workers.emplace_back([this, &queries, &results, &result_mutex, safe_max_responses, num_workers, t] {
                 const auto indices = std::views::iota(static_cast<size_t>(t), queries.size()) |
                                      std::views::stride(static_cast<size_t>(num_workers));
                 for (size_t i: indices) {
-                    process_one_query(index_, queries[i], max_responses, max_word_length_, dev_mode_, local_list);
+                    std::vector<RelativeIndex> local_list;
+                    local_list.reserve(512);
+                    process_one_query(index_, queries[i], safe_max_responses, max_word_length_, dev_mode_, local_list);
                     {
                         std::lock_guard lock(result_mutex);
                         results[i] = std::move(local_list);

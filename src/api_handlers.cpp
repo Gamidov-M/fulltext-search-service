@@ -3,6 +3,7 @@
 #include "tokenizer.hpp"
 #include "utils.hpp"
 #include <chrono>
+#include <exception>
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <unordered_set>
@@ -94,14 +95,26 @@ namespace fulltext_search_service {
             }
         }
 
-        const int request_size = std::min(
+        const int request_size = std::max(1, std::min(
                 offset + limit,
                 api.max_offset + api.max_limit
-        );
+        ));
 
-        Search search(*index, static_cast<std::size_t>(index_config.max_word_length), dev_mode);
+        const std::size_t max_word_length = std::max(static_cast<std::size_t>(1), static_cast<std::size_t>(index_config.max_word_length));
+        Search search(*index, max_word_length, dev_mode);
         auto start = std::chrono::steady_clock::now();
-        auto results = search.search(std::vector{query}, request_size);
+        std::vector<std::vector<RelativeIndex>> results;
+        try {
+            results = search.search(std::vector{query}, request_size);
+        } catch (const std::exception &e) {
+            Log(dev_mode, "[dev] search exception: {}", e.what());
+            sendJson(res, 500, {
+                    {"message", "Ошибка при выполнении поиска"},
+                    {"code",    "search_error"},
+                    {"detail",  e.what()}
+            });
+            return;
+        }
         auto processing_time_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                 std::chrono::steady_clock::now() - start
         ).count();
@@ -109,7 +122,7 @@ namespace fulltext_search_service {
         std::unordered_set<std::string> query_terms;
         if (highlight_enabled && !query.empty()) {
             std::unordered_map<std::string, size_t> word_count;
-            tokenize(query, word_count, static_cast<std::size_t>(index_config.max_word_length));
+            tokenize(query, word_count, static_cast<std::size_t>(index_config.max_word_length), index->GetStemmer());
             for (const auto &[word, _] : word_count) {
                 query_terms.insert(word);
             }
@@ -129,8 +142,9 @@ namespace fulltext_search_service {
                     {"_rankingScore", rel.rank}
             };
             if (highlight_enabled && !query_terms.empty() && index->HasCollection()) {
-                item["highlight"] = highlightContent(content, index->GetCollection(), query_terms, highlight_pre, highlight_post);
-                item["snippet"] = buildSnippet(content, index->GetCollection(), query_terms, snippet_length, snippet_suffix, highlight_pre, highlight_post);
+                const auto *stemmer = index->GetStemmer();
+                item["highlight"] = highlightContent(content, index->GetCollection(), query_terms, highlight_pre, highlight_post, stemmer);
+                item["snippet"] = buildSnippet(content, index->GetCollection(), query_terms, snippet_length, snippet_suffix, highlight_pre, highlight_post, stemmer);
             }
             results_json.push_back(std::move(item));
         }

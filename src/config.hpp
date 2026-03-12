@@ -25,6 +25,13 @@ namespace fulltext_search_service {
         // Максимальная длина слова
         // Более длинные токены отбрасываются при индексации и при разборе запроса
         int max_word_length = 100;
+
+        // Нормализация словоформ (стемминг)
+        // при true слова приводятся к основе при индексации и в запросе
+        bool stemming_enabled = true;
+
+        // Язык стеммера Snowball список языков sb_stemmer_list
+        std::string stemming_language = "russian";
     };
 
     struct ApiConfigSection {

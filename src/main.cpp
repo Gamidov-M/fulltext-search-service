@@ -72,6 +72,7 @@ int main(int argc, char *argv[]) {
         IndexRegistry registry;
         registry.SetBaseStoragePath(config.index.storage_path);
         registry.SetMaxWordLength(config.index.max_word_length);
+        registry.SetStemming(config.index.stemming_enabled, config.index.stemming_language);
         registry.SetDevMode(config.dev_mode);
 
         ApiServer api(registry, config.api, config.server, config.index, config.dev_mode);

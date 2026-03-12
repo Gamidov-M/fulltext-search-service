@@ -8,6 +8,8 @@ port: 8000
 # storage_path: "/var/lib/fulltext-search-service"
 
 # index_max_word_length: 100
+# index_stemming: true
+# index_stemming_language: "russian"
 
 # api_default_limit: 10
 # api_max_limit: 1000

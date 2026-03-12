@@ -19,6 +19,7 @@ namespace fulltext_search_service {
         void SetBaseStoragePath(std::string path);
         void SetMaxWordLength(int value);
         void SetDevMode(bool dev);
+        void SetStemming(bool enabled, std::string language);
 
         [[nodiscard]] const std::string &GetBaseStoragePath() const noexcept {
             return base_storage_path_;
@@ -50,6 +51,8 @@ namespace fulltext_search_service {
 
         std::string base_storage_path_;
         int max_word_length_ = 100;
+        bool stemming_enabled_ = false;
+        std::string stemming_language_ = "russian";
         bool dev_mode_ = false;
         mutable std::mutex mutex_;
         std::unordered_map<std::string, std::unique_ptr<InvertedIndex>> indexes_;

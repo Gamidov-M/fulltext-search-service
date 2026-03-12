@@ -11,6 +11,8 @@ namespace {
     using json = nlohmann::json;
 
     constexpr int kTotalDocs = 1'000'000;
+    constexpr int kNumColumns = 255;
+    constexpr int kCharsPerColumn = 255;
 
     const std::vector<std::string> kWords = {
             "программа", "данные", "поиск", "индекс", "документ", "сервер", "запрос", "результат", "скорость", "тест",
@@ -18,29 +20,58 @@ namespace {
             "россия", "столица", "город", "страна", "история", "культура"
     };
 
-    std::string randomSentence(std::mt19937 &rng, int wordCount) {
+    // Строка ровно len символов из случайных слов (пробел между словами)
+    std::string randomStringOfLength(std::mt19937 &rng, int len) {
         std::uniform_int_distribution<size_t> dist(0, kWords.size() - 1);
         std::string s;
-        for (int i = 0; i < wordCount; ++i) {
+        s.reserve(static_cast<size_t>(len) + 32);
+        while (static_cast<int>(s.size()) < len) {
             if (!s.empty()) {
                 s += ' ';
             }
             s += kWords[dist(rng)];
         }
-
+        if (static_cast<int>(s.size()) > len) {
+            s.resize(static_cast<size_t>(len));
+        }
         return s;
+    }
+
+    // Один документ: id + 255 полей col_1..col_255, в каждом ровно 255 символов
+    json makeOneDocument(int docId, std::mt19937 &rng) {
+        json content = {{"id", docId}};
+        for (int c = 1; c <= kNumColumns; ++c) {
+            std::string fieldName = "col_" + std::to_string(c);
+            content[fieldName] = randomStringOfLength(rng, kCharsPerColumn);
+        }
+        return {
+            {"content", std::move(content)}
+        };
     }
 
     json makeDocumentsBatch(int startId, int count, std::mt19937 &rng) {
         json arr = json::array();
-        std::uniform_int_distribution<int> wordsPerDoc(5, 25);
         for (int i = 0; i < count; ++i) {
-            arr.push_back({
-                {"content", { {"id", startId + i}, {"name", randomSentence(rng, wordsPerDoc(rng))}}}
+            arr.push_back(makeOneDocument(startId + i, rng));
+        }
+        return arr;
+    }
+
+    // Построение схемы коллекции: id (int) + 255 полей string
+    json makeCollectionSchema() {
+        json fields = json::array();
+        fields.push_back({
+            {"name", "id"},
+            {"type", "int"}
+        });
+        for (int c = 1; c <= kNumColumns; ++c) {
+            fields.push_back({
+                {"name", "col_" + std::to_string(c)},
+                {"type", "string"}
             });
         }
 
-        return arr;
+        return fields;
     }
 
     const std::string kIndexName = "bench";
@@ -83,23 +114,21 @@ namespace {
 } // namespace
 
 int main() {
-    std::println("Бенчмарк загрузки и поиска\n");
-    std::println("Параметры: документов = {}\n", kTotalDocs);
+    std::println("Бенчмарк загрузки и поиска");
+    std::println("Параметры: документов = {}, столбцов = {}, символов в столбце = {}\n", kTotalDocs, kNumColumns, kCharsPerColumn);
 
     httplib::Client cli("127.0.0.1", 8000);
     cli.set_connection_timeout(2, 0);
-    cli.set_read_timeout(1800, 0);
-    cli.set_write_timeout(1800, 0);
+    cli.set_read_timeout(3600, 0);
+    cli.set_write_timeout(3600, 0);
 
     std::mt19937 rng(12345);
 
-    std::println("0 -- Создание коллекции \"{}\" (id: int, name: string)", kIndexName);
+    std::println("0 -- Создание коллекции \"{}\" (id: int, col_1..col_{}: string, по {} символов)", kIndexName, kNumColumns, kCharsPerColumn);
+
     json collection_body = {
             {"name",   kIndexName},
-            {"fields", json::array({
-                    {{"name", "id"},   {"type", "int"}},
-                    {{"name", "name"}, {"type", "string"}}
-            })}
+            {"fields", makeCollectionSchema()}
     };
     auto collection_res = cli.Post("/indexes/collections", collection_body.dump(), "application/json");
     if (!collection_res || (collection_res->status != 201 && collection_res->status != 200)) {
@@ -124,11 +153,12 @@ int main() {
     double indexSec = indexMs / 1000.0;
     std::println("   Итого: {} документов за {:.2f} с ({:.0f} док/с)\n", received, indexSec, (indexSec > 0 ? received / indexSec : 0));
 
-    std::println("2 -- Поиск: 20 запросов по одному и по два слова...");
+    std::println("2 -- Поиск: 20 запросов");
 
     std::vector<std::string> queries = {
             "поиск", "документ", "индекс", "сервер", "данные", "москва", "россия",
             "программа код", "база данные", "поиск результат", "индекс документ",
+            "документы", "поиска", "индекса", "программы", "результаты",
     };
     std::vector<int64_t> searchTimesMs;
     searchTimesMs.reserve(20);

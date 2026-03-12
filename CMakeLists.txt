@@ -34,10 +34,19 @@ FetchContent_Declare(yaml-cpp
         )
 FetchContent_MakeAvailable(yaml-cpp)
 
+FetchContent_Declare(libstemmer
+        GIT_REPOSITORY https://github.com/zvelo/libstemmer.git
+        GIT_TAG master
+        )
+FetchContent_MakeAvailable(libstemmer)
+
+target_include_directories(stemmer PUBLIC ${libstemmer_SOURCE_DIR}/include)
+
 add_library(fulltext_search_service_lib
         src/config.cpp
         src/highlight.cpp
         src/rate_limiter.cpp
+        src/stemmer.cpp
         src/tokenizer.cpp
         src/inverted_index.cpp
         src/index_registry.cpp
@@ -50,6 +59,7 @@ target_link_libraries(fulltext_search_service_lib PUBLIC
         nlohmann_json::nlohmann_json
         httplib::httplib
         yaml-cpp::yaml-cpp
+        stemmer
         )
 
 add_executable(fulltext-search-service src/main.cpp)

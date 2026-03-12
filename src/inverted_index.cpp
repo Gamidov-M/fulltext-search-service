@@ -1,6 +1,7 @@
 #include "inverted_index.hpp"
 #include "utils.hpp"
 #include "tokenizer.hpp"
+#include "stemmer.hpp"
 #include <algorithm>
 #include <cstdint>
 #include <filesystem>
@@ -36,6 +37,8 @@ namespace fulltext_search_service {
 
     } // namespace
 
+    InvertedIndex::~InvertedIndex() = default;
+
     void InvertedIndex::SetStoragePath(std::string path) {
         if (path.empty()) {
             throw std::invalid_argument("Путь к хранилищу индекса не может быть пустым");
@@ -51,6 +54,21 @@ namespace fulltext_search_service {
 
     void InvertedIndex::SetDevMode(bool dev) {
         dev_mode_ = dev;
+    }
+
+    void InvertedIndex::SetStemming(bool enabled, std::string language) {
+        if (!enabled || language.empty()) {
+            stemmer_.reset();
+            return;
+        }
+        stemmer_ = Stemmer::create(language.c_str(), nullptr);
+        if (!stemmer_) {
+            Log(dev_mode_, "[dev] inverted_index::SetStemming: не удалось создать стеммер для языка '{}'", language);
+        }
+    }
+
+    const Stemmer *InvertedIndex::GetStemmer() const noexcept {
+        return stemmer_.get();
     }
 
     void InvertedIndex::SetCollection(Collection collection) {
@@ -459,7 +477,7 @@ namespace fulltext_search_service {
                                std::views::stride(static_cast<size_t>(num_workers));
                 for (size_t doc_id: indices) {
                     std::unordered_map<std::string, size_t> word_count;
-                    tokenize(searchable_texts[doc_id], word_count, static_cast<std::size_t>(max_word_length_));
+                    tokenize(searchable_texts[doc_id], word_count, static_cast<std::size_t>(max_word_length_), GetStemmer());
                     size_t doc_len = 0;
                     for (auto &[w, count]: word_count) {
                         doc_len += count;

@@ -71,8 +71,8 @@ int main() {
 
     std::println("4 -- Поиск");
 
-    for (const auto &query: {"тест", "второй документ", "мда текст"}) {
-        json search_body = {{"q", query}, {"limit", 5}};
+    for (const auto &query: {"тест", "второй документ", "мда текст", "документы", "тесты"}) {
+        json search_body = {{"q", query}, {"limit", 5}, {"highlight", true}};
         auto post_search = cli.Post("/indexes/" + collection_name + "/search", search_body.dump(), "application/json");
         json search_res = get_json(post_search);
 
@@ -83,6 +83,9 @@ int main() {
                 const json &content = hit.contains("content") ? hit["content"] : json::object();
                 double score = hit.value("_rankingScore", 0.0);
                 std::println("  id={} _rankingScore={:.4f} content={}", id, score, content.dump());
+                if (hit.contains("snippet") && hit["snippet"].is_string()) {
+                    std::println("  snippet={}", hit["snippet"].get<std::string>());
+                }
             }
 
             std::println("");

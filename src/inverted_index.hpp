@@ -1,7 +1,9 @@
 #pragma once
 
 #include "types.hpp"
+#include "stemmer.hpp"
 #include <nlohmann/json.hpp>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -31,6 +33,7 @@ namespace fulltext_search_service {
     class InvertedIndex {
     public:
         InvertedIndex() = default;
+        ~InvertedIndex();
 
         // Путь к каталогу для хранения индекса на диске
         void SetStoragePath(std::string path);
@@ -38,6 +41,14 @@ namespace fulltext_search_service {
         void SetMaxWordLength(int value);
 
         void SetDevMode(bool dev);
+
+        // Включить стемминг для заданного языка
+        // При false стеммер не используется
+        void SetStemming(bool enabled, std::string language);
+
+        // Указатель на стеммер коллекции (для токенизации запросов и индексации)
+        // nullptr если стемминг отключён
+        [[nodiscard]] const class Stemmer *GetStemmer() const noexcept;
 
         [[nodiscard]] const std::string &GetStoragePath() const noexcept { return storage_path_; }
 
@@ -101,6 +112,7 @@ namespace fulltext_search_service {
         std::string storage_path_;
         int max_word_length_ = 100;
         bool dev_mode_ = false;
+        std::unique_ptr<Stemmer> stemmer_;
         Collection collection_;
         std::vector<nlohmann::json> docs_;
         std::vector<size_t> doc_lengths_;

@@ -14,7 +14,7 @@ namespace fulltext_search_service {
                 InvertedIndex &index,
                 std::size_t max_word_length = 100,
                 bool dev_mode = false
-        ) : index_(index), max_word_length_(max_word_length), dev_mode_(dev_mode) {}
+        ) : index_(index), max_word_length_(std::max(max_word_length, std::size_t(1))), dev_mode_(dev_mode) {}
 
         // Для каждого запроса до max_responses документов, отсортированных по убыванию ранга (нормализован в [0, 1])
         [[nodiscard]] std::vector<std::vector<RelativeIndex>> search(

@@ -1,4 +1,5 @@
 #include "highlight.hpp"
+#include "stemmer.hpp"
 #include <sstream>
 
 namespace fulltext_search_service {
@@ -7,7 +8,8 @@ namespace fulltext_search_service {
             const std::string &text,
             const std::unordered_set <std::string> &terms,
             const std::string &pre,
-            const std::string &post
+            const std::string &post,
+            const Stemmer *stemmer
     ) {
         if (text.empty()) {
             return text;
@@ -30,7 +32,8 @@ namespace fulltext_search_service {
             }
 
             std::string word(text.substr(start, i - start));
-            if (terms.count(word)) {
+            std::string key = stemmer ? stemmer->normalize(word) : word;
+            if (!key.empty() && terms.count(key)) {
                 result += pre;
                 result += word;
                 result += post;
@@ -47,7 +50,8 @@ namespace fulltext_search_service {
             const Collection &collection,
             const std::unordered_set <std::string> &terms,
             const std::string &pre,
-            const std::string &post
+            const std::string &post,
+            const Stemmer *stemmer
     ) {
         if (!content.is_object() || terms.empty()) {
             return content;
@@ -65,7 +69,7 @@ namespace fulltext_search_service {
             }
 
             std::string value = it->get<std::string>();
-            out[field.name] = highlightInString(value, terms, pre, post);
+            out[field.name] = highlightInString(value, terms, pre, post, stemmer);
         }
         return out;
     }
@@ -77,7 +81,8 @@ namespace fulltext_search_service {
             size_t max_length,
             const std::string &suffix,
             const std::string &pre,
-            const std::string &post
+            const std::string &post,
+            const Stemmer *stemmer
     ) {
         if (!content.is_object()) {
             return {};
@@ -105,7 +110,7 @@ namespace fulltext_search_service {
             }
 
             first = false;
-            combined << highlightInString(value, terms, pre, post);
+            combined << highlightInString(value, terms, pre, post, stemmer);
         }
 
         std::string full = combined.str();

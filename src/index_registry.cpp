@@ -41,6 +41,11 @@ namespace fulltext_search_service {
         }
     }
 
+    void IndexRegistry::SetStemming(bool enabled, std::string language) {
+        stemming_enabled_ = enabled;
+        stemming_language_ = std::move(language);
+    }
+
     void IndexRegistry::SetDevMode(bool dev) {
         dev_mode_ = dev;
     }
@@ -65,6 +70,7 @@ namespace fulltext_search_service {
         auto index = std::make_unique<InvertedIndex>();
         index->SetStoragePath(dir.string());
         index->SetMaxWordLength(max_word_length_);
+        index->SetStemming(stemming_enabled_, stemming_language_);
         index->SetDevMode(dev_mode_);
         index->SetCollection(std::move(collection));
         if (!index->SaveCollection()) {
@@ -98,6 +104,7 @@ namespace fulltext_search_service {
         auto index = std::make_unique<InvertedIndex>();
         index->SetStoragePath(dir.string());
         index->SetMaxWordLength(max_word_length_);
+        index->SetStemming(stemming_enabled_, stemming_language_);
         index->SetDevMode(dev_mode_);
         if (!index->Load()) {
             Log(dev_mode_, "[dev] index_registry: не удалось загрузить индекс {}", name);

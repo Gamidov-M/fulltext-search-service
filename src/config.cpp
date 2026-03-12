@@ -46,6 +46,15 @@ namespace fulltext_search_service {
                     cfg.index.max_word_length = v;
                 }
             }
+            if (root["index_stemming"]) {
+                cfg.index.stemming_enabled = root["index_stemming"].as<bool>();
+            }
+            if (root["index_stemming_language"]) {
+                std::string lang = root["index_stemming_language"].as<std::string>();
+                if (!lang.empty()) {
+                    cfg.index.stemming_language = std::move(lang);
+                }
+            }
             if (root["api_default_limit"]) {
                 int v = root["api_default_limit"].as<int>();
                 if (v > 0) {
