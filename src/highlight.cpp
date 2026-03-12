@@ -6,6 +6,8 @@
 
 namespace fulltext_search_service {
 
+    namespace {
+
     std::string highlightInString(
             const std::string &text,
             const std::unordered_set <std::string> &terms,
@@ -55,82 +57,7 @@ namespace fulltext_search_service {
         return result;
     }
 
-    nlohmann::json highlightContent(
-            const nlohmann::json &content,
-            const Collection &collection,
-            const std::unordered_set <std::string> &terms,
-            const std::string &pre,
-            const std::string &post,
-            const Stemmer *stemmer
-    ) {
-        if (!content.is_object() || terms.empty()) {
-            return content;
-        }
-
-        nlohmann::json out = content;
-        for (const auto &field: collection.fields) {
-            if (field.type != "string") {
-                continue;
-            }
-
-            auto it = out.find(field.name);
-            if (it == out.end() || !it->is_string()) {
-                continue;
-            }
-
-            std::string value = it->get<std::string>();
-            out[field.name] = highlightInString(value, terms, pre, post, stemmer);
-        }
-        return out;
-    }
-
-    std::string buildSnippet(
-            const nlohmann::json &content,
-            const Collection &collection,
-            const std::unordered_set <std::string> &terms,
-            size_t max_length,
-            const std::string &suffix,
-            const std::string &pre,
-            const std::string &post,
-            const Stemmer *stemmer
-    ) {
-        if (!content.is_object()) {
-            return {};
-        }
-
-        std::ostringstream combined;
-        bool first = true;
-        for (const auto &field: collection.fields) {
-            if (field.type != "string") {
-                continue;
-            }
-
-            auto it = content.find(field.name);
-            if (it == content.end() || !it->is_string()) {
-                continue;
-            }
-
-            const std::string &value = it->get_ref<const std::string &>();
-            if (value.empty()) {
-                continue;
-            }
-
-            if (!first) {
-                combined << ' ';
-            }
-
-            first = false;
-            combined << highlightInString(value, terms, pre, post, stemmer);
-        }
-
-        std::string full = combined.str();
-        if (full.size() <= max_length) {
-            return full;
-        }
-        return full.substr(0, max_length) + suffix;
-    }
-
-    static bool wordMatches(
+    bool wordMatches(
             const std::string &word,
             const std::unordered_set<std::string> &terms,
             const Stemmer *stemmer,
@@ -144,6 +71,7 @@ namespace fulltext_search_service {
             key_out = word;
             ToLowerUtf8(key_out);
         }
+
         return !key_out.empty() && terms.count(key_out);
     }
 
@@ -226,26 +154,26 @@ namespace fulltext_search_service {
         return result;
     }
 
-    nlohmann::json cropContent(
+    } // namespace
+
+    std::string buildSnippet(
             const nlohmann::json &content,
             const Collection &collection,
-            const std::unordered_set<std::string> &crop_field_names,
-            const std::unordered_set<std::string> &terms,
-            size_t crop_length,
-            const std::string &crop_marker,
+            const std::unordered_set <std::string> &terms,
+            size_t max_length,
+            const std::string &suffix,
+            const std::string &pre,
+            const std::string &post,
             const Stemmer *stemmer
     ) {
-        nlohmann::json out = nlohmann::json::object();
-        if (!content.is_object() || crop_field_names.empty() || terms.empty()) {
-            return out;
+        if (!content.is_object()) {
+            return {};
         }
 
-        for (const auto &field : collection.fields) {
+        std::ostringstream combined;
+        bool first = true;
+        for (const auto &field: collection.fields) {
             if (field.type != "string") {
-                continue;
-            }
-
-            if (crop_field_names.count(field.name) == 0) {
                 continue;
             }
 
@@ -255,7 +183,61 @@ namespace fulltext_search_service {
             }
 
             const std::string &value = it->get_ref<const std::string &>();
-            out[field.name] = cropField(value, terms, crop_length, crop_marker, stemmer);
+            if (value.empty()) {
+                continue;
+            }
+
+            if (!first) {
+                combined << ' ';
+            }
+
+            first = false;
+            combined << highlightInString(value, terms, pre, post, stemmer);
+        }
+
+        std::string full = combined.str();
+        if (full.size() <= max_length) {
+            return full;
+        }
+        return full.substr(0, max_length) + suffix;
+    }
+
+    nlohmann::json buildFormattedContent(
+            const nlohmann::json &content,
+            const Collection &collection,
+            const std::unordered_set<std::string> &crop_field_names,
+            const std::unordered_set<std::string> &terms,
+            size_t crop_length,
+            const std::string &crop_marker,
+            bool do_highlight,
+            const std::string &highlight_pre,
+            const std::string &highlight_post,
+            const Stemmer *stemmer
+    ) {
+        nlohmann::json out = nlohmann::json::object();
+        if (!content.is_object() || terms.empty()) {
+            return out;
+        }
+
+        for (const auto &field : collection.fields) {
+            if (field.type != "string") {
+                continue;
+            }
+            auto it = content.find(field.name);
+            if (it == content.end() || !it->is_string()) {
+                continue;
+            }
+            const std::string &value = it->get_ref<const std::string &>();
+
+            if (crop_field_names.count(field.name) != 0) {
+                std::string s = cropField(value, terms, crop_length, crop_marker, stemmer);
+                if (do_highlight) {
+                    s = highlightInString(s, terms, highlight_pre, highlight_post, stemmer);
+                }
+                out[field.name] = std::move(s);
+            } else if (do_highlight) {
+                out[field.name] = highlightInString(value, terms, highlight_pre, highlight_post, stemmer);
+            }
         }
         return out;
     }

@@ -6,7 +6,7 @@
 namespace fulltext_search_service {
 
     // Обёртка над Snowball (libstemmer) - нормализация словоформ (стемминг) для индексации и запросов
-    // Потокобезопасна (внутренняя блокировка)
+    // у каждого потока свой экземпляр стеммера (thread-local), без глобальной блокировки
     class Stemmer {
     public:
         // Создаёт стеммер для алгоритма и кодировки (nullptr = UTF-8)
@@ -19,12 +19,14 @@ namespace fulltext_search_service {
 
         // Возвращает нормализованную (стеммированную) форму слова
         // UTF-8
+        // Использует thread-local экземпляр libstemmer - без блокировок между потоками
         [[nodiscard]] std::string normalize(const std::string &word) const;
 
     private:
         struct Impl;
-        explicit Stemmer(std::unique_ptr<Impl> impl);
-        std::unique_ptr<Impl> impl_;
+        explicit Stemmer(std::string algorithm, std::string encoding);
+        std::string algorithm_;
+        std::string encoding_;
     };
 
 } // namespace fulltext_search_service

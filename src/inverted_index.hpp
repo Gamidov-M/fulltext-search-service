@@ -98,6 +98,9 @@ namespace fulltext_search_service {
         // 0 при неверном doc_id
         [[nodiscard]] size_t GetDocumentLength(size_t doc_id) const noexcept;
 
+        // Ссылка на вектор длин документов (для кэширования в горячем цикле поиска)
+        [[nodiscard]] const std::vector<size_t> &GetDocumentLengths() const noexcept;
+
         // Средняя длина документа в терминах (для BM25)
         // 0 при пустой коллекции
         [[nodiscard]] double GetAverageDocumentLength() const noexcept;

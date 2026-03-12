@@ -492,21 +492,61 @@ namespace fulltext_search_service {
 
         Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: слияние - объединяем per-thread словари (термин -> vector<Entry>) в один - Entry = (doc_id, count)");
 
-        // Слияние локальных словарей потоков в один freq_dictionary_
-        // Один документ обрабатывается ровно одним потоком (stride)
-        // дубликатов doc_id в постингах нет
+        // Параллельное слияние: каждый поток собирает термины с hash(term) % num_workers == t
+        std::vector<Dict> partial_dicts(num_workers);
+        std::vector<std::jthread> merge_workers;
+        merge_workers.reserve(num_workers);
+        for (unsigned t = 0; t < num_workers; ++t) {
+            merge_workers.emplace_back([&per_thread_dicts, &partial_dicts, num_workers, t] {
+                Dict &out = partial_dicts[t];
+                for (Dict &local : per_thread_dicts) {
+                    for (auto &[word, list] : local) {
+                        if (std::hash<std::string>{}(word) % num_workers == t) {
+                            auto &target = out[word];
+                            target.insert(target.end(), std::make_move_iterator(list.begin()), std::make_move_iterator(list.end()));
+                        }
+                    }
+                }
+            });
+        }
+        merge_workers.clear();
+
         Dict new_dict;
-        for (Dict &local: per_thread_dicts) {
-            for (auto &[word, list]: local) {
-                auto &target = new_dict[word];
-                target.insert(target.end(), std::make_move_iterator(list.begin()), std::make_move_iterator(list.end()));
+        for (Dict &partial : partial_dicts) {
+            for (auto &[word, list] : partial) {
+                new_dict[std::move(word)] = std::move(list);
             }
         }
 
-        // Сортируем постинги по doc_id, чтобы GetWordCount возвращал готовый порядок без копирования
+        // Сортируем постинги по doc_id параллельно по терминам
         Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: сортировка постингов по doc_id внутри каждого термина");
-        for (auto &[word, list]: new_dict) {
-            std::ranges::sort(list, {}, &Entry::doc_id);
+        std::vector<std::string> dict_keys;
+        dict_keys.reserve(new_dict.size());
+        for (auto &[word, _] : new_dict) {
+            dict_keys.push_back(word);
+        }
+        const unsigned sort_workers = std::min(
+                static_cast<unsigned>(dict_keys.size()),
+                std::max(1u, std::thread::hardware_concurrency())
+        );
+
+        if (sort_workers < 2u) {
+            for (auto &[word, list] : new_dict) {
+                std::ranges::sort(list, {}, &Entry::doc_id);
+            }
+        } else {
+            std::vector<std::jthread> sort_threads;
+            sort_threads.reserve(sort_workers);
+            for (unsigned t = 0; t < sort_workers; ++t) {
+                sort_threads.emplace_back([&new_dict, &dict_keys, sort_workers, t] {
+                    for (size_t i = t; i < dict_keys.size(); i += sort_workers) {
+                        auto it = new_dict.find(dict_keys[i]);
+                        if (it != new_dict.end()) {
+                            std::ranges::sort(it->second, {}, &Entry::doc_id);
+                        }
+                    }
+                });
+            }
         }
 
         freq_dictionary_ = std::move(new_dict);
@@ -540,6 +580,10 @@ namespace fulltext_search_service {
             return 0;
         }
         return doc_lengths_[doc_id];
+    }
+
+    const std::vector<size_t> &InvertedIndex::GetDocumentLengths() const noexcept {
+        return doc_lengths_;
     }
 
     double InvertedIndex::GetAverageDocumentLength() const noexcept {

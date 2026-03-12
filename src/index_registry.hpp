@@ -56,6 +56,7 @@ namespace fulltext_search_service {
         bool dev_mode_ = false;
         mutable std::mutex mutex_;
         std::unordered_map<std::string, std::unique_ptr<InvertedIndex>> indexes_;
+        std::unordered_map<std::string, std::unique_ptr<std::mutex>> load_mutexes_;
     };
 
 } // namespace fulltext_search_service

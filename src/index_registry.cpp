@@ -88,37 +88,65 @@ namespace fulltext_search_service {
             return nullptr;
         }
 
-        std::lock_guard lock(mutex_);
-        auto it = indexes_.find(name);
-        if (it != indexes_.end()) {
-            return it->second.get();
-        }
-
         namespace fs = std::filesystem;
         fs::path dir = fs::path(base_storage_path_) / name;
         fs::path scheme_path = dir / kSchemeFilename;
-        if (!fs::exists(scheme_path)) {
-            return nullptr;
+
+        std::mutex *load_mtx_ptr = nullptr;
+        {
+            std::lock_guard lock(mutex_);
+            auto it = indexes_.find(name);
+            if (it != indexes_.end()) {
+                return it->second.get();
+            }
+
+            if (!fs::exists(scheme_path)) {
+                return nullptr;
+            }
+
+            auto &load_mtx = load_mutexes_[name];
+            if (!load_mtx) {
+                load_mtx = std::make_unique<std::mutex>();
+            }
+
+            load_mtx_ptr = load_mtx.get();
+            load_mtx_ptr->lock();
         }
 
-        auto index = std::make_unique<InvertedIndex>();
+        {
+            std::lock_guard lock(mutex_);
+            auto it = indexes_.find(name);
+            if (it != indexes_.end()) {
+                load_mtx_ptr->unlock();
+                return it->second.get();
+            }
+        }
+
+        std::unique_ptr<InvertedIndex> index = std::make_unique<InvertedIndex>();
         index->SetStoragePath(dir.string());
         index->SetMaxWordLength(max_word_length_);
         index->SetStemming(stemming_enabled_, stemming_language_);
         index->SetDevMode(dev_mode_);
-        if (!index->Load()) {
-            Log(dev_mode_, "[dev] index_registry: не удалось загрузить индекс {}", name);
-            return nullptr;
+        const bool loaded = index->Load();
+
+        {
+            std::lock_guard lock(mutex_);
+            if (!loaded) {
+                load_mtx_ptr->unlock();
+                Log(dev_mode_, "[dev] index_registry: не удалось загрузить индекс {}", name);
+                return nullptr;
+            }
+
+            if (!index->HasCollection()) {
+                load_mtx_ptr->unlock();
+                return nullptr;
+            }
+
+            InvertedIndex *ptr = index.get();
+            indexes_[name] = std::move(index);
+            load_mtx_ptr->unlock();
+            return ptr;
         }
-
-        if (!index->HasCollection()) {
-            return nullptr;
-        }
-
-        InvertedIndex *ptr = index.get();
-        indexes_[name] = std::move(index);
-
-        return ptr;
     }
 
     bool IndexRegistry::HasCollection(const std::string &name) const {

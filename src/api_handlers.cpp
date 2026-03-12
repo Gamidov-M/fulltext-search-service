@@ -6,6 +6,7 @@
 #include <exception>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <thread>
 #include <unordered_set>
 
 namespace fulltext_search_service {
@@ -152,25 +153,94 @@ namespace fulltext_search_service {
         const auto &full_list = results.empty() ? std::vector<RelativeIndex>{} : results[0];
         const size_t from = static_cast<size_t>(offset);
         const size_t to = std::min(from + static_cast<size_t>(limit), full_list.size());
+        const size_t result_count = (from < to) ? (to - from) : 0;
+
+        std::unordered_set<std::string> attributes_to_retrieve;
+        if (body.contains("attributesToRetrieve") && body["attributesToRetrieve"].is_array()) {
+            for (const auto &el : body["attributesToRetrieve"]) {
+                if (el.is_string()) {
+                    attributes_to_retrieve.insert(el.get<std::string>());
+                }
+            }
+        }
+
+        auto projectContent = [&attributes_to_retrieve](const nlohmann::json &content) -> nlohmann::json {
+            if (attributes_to_retrieve.empty() || !content.is_object()) {
+                return content;
+            }
+
+            nlohmann::json out = nlohmann::json::object();
+            for (const auto &key : attributes_to_retrieve) {
+                auto it = content.find(key);
+                if (it != content.end()) {
+                    out[key] = *it;
+                }
+            }
+
+            return out;
+        };
+
+        const bool need_formatted = (highlight_enabled || !crop_fields_set.empty()) && !query_terms.empty() && index->HasCollection();
+        const auto *stemmer = index->GetStemmer();
+        const Collection &collection = index->GetCollection();
+
+        std::vector<nlohmann::json> items(result_count);
+        const unsigned num_workers = result_count > 1
+                ? std::min(static_cast<unsigned>(result_count), std::max(1u, std::thread::hardware_concurrency()))
+                : 1u;
+
+        if (num_workers < 2u) {
+            for (size_t i = 0; i < result_count; ++i) {
+                const auto &rel = full_list[from + i];
+                const nlohmann::json &content = index->GetDocument(rel.doc_id);
+                nlohmann::json item = {
+                        {"id",            static_cast<int>(rel.doc_id)},
+                        {"content",       projectContent(content)},
+                        {"_rankingScore", rel.rank}
+                };
+                if (need_formatted) {
+                    item["_formatted"] = buildFormattedContent(
+                            content, collection, crop_fields_set, query_terms,
+                            crop_length, crop_marker, highlight_enabled,
+                            highlight_pre, highlight_post, stemmer
+                    );
+                    if (highlight_enabled) {
+                        item["snippet"] = buildSnippet(content, collection, query_terms, snippet_length, snippet_suffix, highlight_pre, highlight_post, stemmer);
+                    }
+                }
+                items[i] = std::move(item);
+            }
+        } else {
+            std::vector<std::jthread> workers;
+            workers.reserve(num_workers);
+            for (unsigned t = 0; t < num_workers; ++t) {
+                workers.emplace_back([&, t] {
+                    for (size_t i = t; i < result_count; i += num_workers) {
+                        const auto &rel = full_list[from + i];
+                        const nlohmann::json &content = index->GetDocument(rel.doc_id);
+                        nlohmann::json item = {
+                                {"id",            static_cast<int>(rel.doc_id)},
+                                {"content",       projectContent(content)},
+                                {"_rankingScore", rel.rank}
+                        };
+                        if (need_formatted) {
+                            item["_formatted"] = buildFormattedContent(
+                                    content, collection, crop_fields_set, query_terms,
+                                    crop_length, crop_marker, highlight_enabled,
+                                    highlight_pre, highlight_post, stemmer
+                            );
+                            if (highlight_enabled) {
+                                item["snippet"] = buildSnippet(content, collection, query_terms, snippet_length, snippet_suffix, highlight_pre, highlight_post, stemmer);
+                            }
+                        }
+                        items[i] = std::move(item);
+                    }
+                });
+            }
+        }
 
         nlohmann::json results_json = nlohmann::json::array();
-        for (size_t i = from; i < to; ++i) {
-            const auto &rel = full_list[i];
-            const nlohmann::json &content = index->GetDocument(rel.doc_id);
-            nlohmann::json item = {
-                    {"id",            static_cast<int>(rel.doc_id)},
-                    {"content",       content},
-                    {"_rankingScore", rel.rank}
-            };
-            if (highlight_enabled && !query_terms.empty() && index->HasCollection()) {
-                const auto *stemmer = index->GetStemmer();
-                item["highlight"] = highlightContent(content, index->GetCollection(), query_terms, highlight_pre, highlight_post, stemmer);
-                item["snippet"] = buildSnippet(content, index->GetCollection(), query_terms, snippet_length, snippet_suffix, highlight_pre, highlight_post, stemmer);
-            }
-            if (!crop_fields_set.empty() && !query_terms.empty() && index->HasCollection()) {
-                const auto *stemmer = index->GetStemmer();
-                item["_cropped"] = cropContent(content, index->GetCollection(), crop_fields_set, query_terms, crop_length, crop_marker, stemmer);
-            }
+        for (auto &item : items) {
             results_json.push_back(std::move(item));
         }
         Log(dev_mode, "[dev] search index={} q=\"{}\" results={}", *name_opt, query, full_list.size());

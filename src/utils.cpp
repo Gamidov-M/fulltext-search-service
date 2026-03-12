@@ -128,31 +128,30 @@ namespace fulltext_search_service {
     } // namespace
 
     void ToLowerUtf8(std::string &s) {
-        std::string result;
-        result.reserve(s.size());
+        if (s.empty()) {
+            return;
+        }
+        unsigned char *out = reinterpret_cast<unsigned char *>(s.data());
         const unsigned char *p = reinterpret_cast<const unsigned char *>(s.data());
         const size_t len = s.size();
-
+        size_t write_pos = 0;
         size_t i = 0;
+
         while (i < len) {
             uint32_t cp;
             int n = DecodeUtf8(p + i, len - i, cp);
             if (n == 0) {
-                result.push_back(static_cast<char>(p[i]));
+                out[write_pos++] = p[i];
                 i += 1;
                 continue;
             }
 
             cp = ToLowerCodepoint(cp);
-            unsigned char buf[4];
-            int m = EncodeUtf8(cp, buf);
-            for (int j = 0; j < m; ++j) {
-                result.push_back(static_cast<char>(buf[j]));
-            }
-
+            int m = EncodeUtf8(cp, out + write_pos);
+            write_pos += static_cast<size_t>(m);
             i += static_cast<size_t>(n);
         }
-        s = std::move(result);
+        s.resize(write_pos);
     }
 
 } // namespace fulltext_search_service

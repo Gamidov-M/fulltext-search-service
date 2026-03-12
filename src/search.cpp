@@ -52,6 +52,8 @@ namespace fulltext_search_service {
                 return;
             }
 
+            const std::vector<size_t> &doc_lengths = index.GetDocumentLengths();
+
             // doc_id -> накопленный BM25 score (float)
             std::unordered_map<size_t, float> doc_score;
             doc_score.reserve(256);
@@ -65,7 +67,7 @@ namespace fulltext_search_service {
                 }
 
                 for (const auto &entry: postings) {
-                    const size_t doc_len = index.GetDocumentLength(entry.doc_id);
+                    const size_t doc_len = (entry.doc_id < doc_lengths.size()) ? doc_lengths[entry.doc_id] : 0u;
                     const float tf = static_cast<float>(entry.count);
                     // BM25: idf * (tf * (k1+1)) / (tf + k1 * (1 - b + b * doc_len/avgdl))
                     const float denom = tf + kBM25_k1 * static_cast<float>(1.0 - kBM25_b + kBM25_b * (static_cast<double>(doc_len) / avgdl));
