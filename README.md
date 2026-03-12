@@ -19,6 +19,7 @@
 - [x] Подсветка совпадений (snippets/highlight) в результатах поиска
 - [x] Стемминг (нормализация словоформ) через Snowball
 - [x] Поиск без учёта регистра
+- [x] Обрезка полей - фрагмент текста вокруг совпадения
 
 ### Планируется
 
@@ -201,12 +202,15 @@ curl -X POST http://127.0.0.1:8000/indexes/products/search \
   -d '{"q": "Второй", "limit": 5, "offset": 0}'
 ```
 
-| Параметр    | Тип             | По умолчанию |
-|-------------|-----------------|--------------|
-| `q`         | string          | `""`         |
-| `limit`     | int             | 20 (до 100)  |
-| `offset`    | int             | 0            |
-| `highlight` | bool или object | `false`      |
+| Параметр      | Тип             | По умолчанию |
+|---------------|-----------------|--------------|
+| `q`           | string          | `""`         |
+| `limit`       | int             | 20 (до 100)  |
+| `offset`      | int             | 0            |
+| `highlight`   | bool или object | `false`      |
+| `crop_fields` | array of string | -            |
+| `crop_length` | int             | 15           |
+| `crop_marker` | string          | `"..."`      |
 
 Подсветка совпадений (snippets/highlight): при `"highlight": true` в каждом результате добавляются поля
 
@@ -216,14 +220,31 @@ curl -X POST http://127.0.0.1:8000/indexes/products/search \
   обрезанный до заданной длины с суффиксом (по умолчанию 255 символов и `...`)
 
 Кастомные настройки: передайте объект вместо `true`:
+
 - **pre**, **post** - теги подсветки, например `"highlight": {"pre": "<mark>", "post": "</mark>"}`
 - **snippet_length** - максимальная длина сниппета в символах (по умолчанию 255)
 - **snippet_suffix** - суффикс при обрезке (по умолчанию `"..."`)
+
+**Обрезка полей (crop):** при указании `crop_fields` в каждом результате добавляется объект **\_cropped** с обрезанными
+значениями указанных строковых полей
+Текст обрезается до `crop_length` слов вокруг первого совпадения с запросом; в местах обрезки подставляется `crop_marker`
+
+- **crop_fields** - массив имён полей для обрезки (например `["name"]`)
+- **crop_length** - число слов вокруг совпадения (по умолчанию 15)
+- **crop_marker** - строка в начале/конце обрезанного фрагмента (по умолчанию `"..."`)
 
 ```bash
 curl -X POST http://127.0.0.1:8000/indexes/products/search \
   -H 'Content-Type: application/json' \
   -d '{"q": "Второй", "limit": 5, "highlight": {"snippet_length": 255, "snippet_suffix": "..."}}'
+```
+
+Пример запроса с обрезкой полей
+
+```bash
+curl -X POST http://127.0.0.1:8000/indexes/products/search \
+  -H 'Content-Type: application/json' \
+  -d '{"q": "Второй", "crop_fields": ["name"], "crop_length": 15, "crop_marker": "..."}'
 ```
 
 Пример ответа
@@ -267,6 +288,22 @@ curl -X POST http://127.0.0.1:8000/indexes/products/search \
       "name": "<em>Второй</em> документ"
   },
   "snippet": "<em>Второй</em> документ"
+}
+```
+
+Пример результата с обрезкой (`"crop_fields": ["name"]`, `"crop_length": 15`)
+
+```json
+{
+  "id": 0,
+  "content": {
+    "id": 2,
+    "name": "Второй документ"
+  },
+  "_rankingScore": 0.95,
+  "_cropped": {
+    "name": "... Второй документ ..."
+  }
 }
 ```
 

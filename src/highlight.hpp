@@ -45,4 +45,26 @@ namespace fulltext_search_service {
             const Stemmer *stemmer = nullptr
     );
 
+    // Обрезает строку до crop_length слов вокруг первого совпадения с terms
+    // В местах обрезки подставляется crop_marker (например "...")
+    [[nodiscard]] std::string cropField(
+            const std::string &text,
+            const std::unordered_set<std::string> &terms,
+            size_t crop_length,
+            const std::string &crop_marker,
+            const Stemmer *stemmer = nullptr
+    );
+
+    // Возвращает JSON с полями из crop_field_names, значения которых обрезанные строки
+    // Только string-поля из collection, входящие в crop_field_names, обрабатываются
+    [[nodiscard]] nlohmann::json cropContent(
+            const nlohmann::json &content,
+            const Collection &collection,
+            const std::unordered_set<std::string> &crop_field_names,
+            const std::unordered_set<std::string> &terms,
+            size_t crop_length,
+            const std::string &crop_marker,
+            const Stemmer *stemmer = nullptr
+    );
+
 } // namespace fulltext_search_service

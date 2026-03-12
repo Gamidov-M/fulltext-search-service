@@ -92,8 +92,6 @@ namespace fulltext_search_service {
         // Кодирует кодпоинт в UTF-8 в buf
         // возвращает число записанных байт
         int EncodeUtf8(uint32_t cp, unsigned char *buf) {
-            std::cout << "EncodeUtf8 " << cp << "\n";
-
             if (cp < 0x80) {
                 buf[0] = static_cast<unsigned char>(cp);
 
@@ -130,7 +128,6 @@ namespace fulltext_search_service {
     } // namespace
 
     void ToLowerUtf8(std::string &s) {
-        std::cout << "ToLowerUtf8 " << s << "\n";
         std::string result;
         result.reserve(s.size());
         const unsigned char *p = reinterpret_cast<const unsigned char *>(s.data());
@@ -155,7 +152,6 @@ namespace fulltext_search_service {
 
             i += static_cast<size_t>(n);
         }
-        std::cout << "ToLowerUtf8 - result - " << result << "\n";
         s = std::move(result);
     }
 

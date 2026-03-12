@@ -95,6 +95,26 @@ namespace fulltext_search_service {
             }
         }
 
+        std::unordered_set<std::string> crop_fields_set;
+        size_t crop_length = 15;
+        std::string crop_marker = "...";
+        if (body.contains("crop_fields") && body["crop_fields"].is_array()) {
+            for (const auto &el : body["crop_fields"]) {
+                if (el.is_string()) {
+                    crop_fields_set.insert(el.get<std::string>());
+                }
+            }
+        }
+        if (body.contains("crop_length") && body["crop_length"].is_number_unsigned()) {
+            const auto v = body["crop_length"].get<std::size_t>();
+            if (v > 0) {
+                crop_length = v;
+            }
+        }
+        if (body.contains("crop_marker") && body["crop_marker"].is_string()) {
+            crop_marker = body["crop_marker"].get<std::string>();
+        }
+
         const int request_size = std::max(1, std::min(
                 offset + limit,
                 api.max_offset + api.max_limit
@@ -120,7 +140,8 @@ namespace fulltext_search_service {
         ).count();
 
         std::unordered_set<std::string> query_terms;
-        if (highlight_enabled && !query.empty()) {
+        const bool need_terms = highlight_enabled || !crop_fields_set.empty();
+        if (need_terms && !query.empty()) {
             std::unordered_map<std::string, size_t> word_count;
             tokenize(query, word_count, static_cast<std::size_t>(index_config.max_word_length), index->GetStemmer());
             for (const auto &[word, _] : word_count) {
@@ -145,6 +166,10 @@ namespace fulltext_search_service {
                 const auto *stemmer = index->GetStemmer();
                 item["highlight"] = highlightContent(content, index->GetCollection(), query_terms, highlight_pre, highlight_post, stemmer);
                 item["snippet"] = buildSnippet(content, index->GetCollection(), query_terms, snippet_length, snippet_suffix, highlight_pre, highlight_post, stemmer);
+            }
+            if (!crop_fields_set.empty() && !query_terms.empty() && index->HasCollection()) {
+                const auto *stemmer = index->GetStemmer();
+                item["_cropped"] = cropContent(content, index->GetCollection(), crop_fields_set, query_terms, crop_length, crop_marker, stemmer);
             }
             results_json.push_back(std::move(item));
         }
