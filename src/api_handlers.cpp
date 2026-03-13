@@ -66,6 +66,10 @@ namespace fulltext_search_service {
         }
 
         std::string query = body.value("q", "");
+        const bool phrase_search = body.value("phrase", false);
+        const bool partial_search = body.value("partial", true);
+        const bool fuzzy_search = body.value("fuzzy", false);
+        int fuzzy_max_edits = std::clamp(body.value("fuzzy_max_edits", 2), 0, 3);
         int limit = std::clamp(body.value("limit", api.max_responses), 1, api.max_limit);
         int offset = std::clamp(body.value("offset", 0), 0, api.max_offset);
 
@@ -124,9 +128,18 @@ namespace fulltext_search_service {
         const std::size_t max_word_length = std::max(static_cast<std::size_t>(1), static_cast<std::size_t>(index_config.max_word_length));
         Search search(*index, max_word_length, dev_mode);
         auto start = std::chrono::steady_clock::now();
+        std::unordered_set<std::string> matched_terms;
         std::vector<std::vector<RelativeIndex>> results;
         try {
-            results = search.search(std::vector{query}, request_size);
+            results = search.search(
+                    std::vector{query},
+                    request_size,
+                    phrase_search,
+                    partial_search,
+                    fuzzy_search,
+                    fuzzy_max_edits,
+                    (highlight_enabled || !crop_fields_set.empty() || partial_search || fuzzy_search) ? &matched_terms : nullptr
+            );
         } catch (const std::exception &e) {
             Log(dev_mode, "[dev] search exception: {}", e.what());
             sendJson(res, 500, {
@@ -143,10 +156,14 @@ namespace fulltext_search_service {
         std::unordered_set<std::string> query_terms;
         const bool need_terms = highlight_enabled || !crop_fields_set.empty();
         if (need_terms && !query.empty()) {
-            std::unordered_map<std::string, size_t> word_count;
-            tokenize(query, word_count, static_cast<std::size_t>(index_config.max_word_length), index->GetStemmer());
-            for (const auto &[word, _] : word_count) {
-                query_terms.insert(word);
+            if ((partial_search || fuzzy_search) && !matched_terms.empty()) {
+                query_terms = matched_terms;
+            } else {
+                std::unordered_map<std::string, size_t> word_count;
+                tokenize(query, word_count, static_cast<std::size_t>(index_config.max_word_length), index->GetStemmer());
+                for (const auto &[word, _] : word_count) {
+                    query_terms.insert(word);
+                }
             }
         }
 

@@ -102,6 +102,14 @@ namespace fulltext_search_service {
         return result;
     }
 
+    std::string InvertedIndex::GetSearchableText(size_t doc_id) const {
+        if (doc_id >= docs_.size()) {
+            return {};
+        }
+
+        return buildSearchableText(docs_[doc_id]);
+    }
+
     bool InvertedIndex::SaveCollection() const {
         if (storage_path_.empty()) {
             return true;
@@ -564,6 +572,12 @@ namespace fulltext_search_service {
         }
 
         return it->second;
+    }
+
+    void InvertedIndex::ForEachVocabularyTerm(const std::function<void(std::string_view)> &fn) const {
+        for (const auto &[term, _] : freq_dictionary_) {
+            fn(term);
+        }
     }
 
     const nlohmann::json &InvertedIndex::GetDocument(size_t doc_id) const {

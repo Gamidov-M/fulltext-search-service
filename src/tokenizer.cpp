@@ -22,8 +22,37 @@ namespace fulltext_search_service {
             if (!word.empty() && word.size() <= max_word_length) {
                 ToLowerUtf8(word);
                 std::string key = stemmer ? stemmer->normalize(word) : word;
+                if (key.empty()) {
+                    key = word;
+                }
                 if (!key.empty()) {
                     ++out[std::move(key)];
+                }
+            }
+        }
+    }
+
+    void tokenizeToSequence(
+            const std::string &text,
+            std::vector<std::string> &out,
+            std::size_t max_word_length,
+            const Stemmer *stemmer
+    ) {
+        for (auto word_range: text | std::views::split(' ')) {
+            std::string word;
+            word.reserve(32);
+            for (char c: word_range) {
+                word += c;
+            }
+
+            if (!word.empty() && word.size() <= max_word_length) {
+                ToLowerUtf8(word);
+                std::string key = stemmer ? stemmer->normalize(word) : word;
+                if (key.empty()) {
+                    key = word;
+                }
+                if (!key.empty()) {
+                    out.push_back(std::move(key));
                 }
             }
         }

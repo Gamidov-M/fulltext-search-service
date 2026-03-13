@@ -2,6 +2,7 @@
 
 #include "types.hpp"
 #include "stemmer.hpp"
+#include <functional>
 #include <nlohmann/json.hpp>
 #include <memory>
 #include <string>
@@ -86,9 +87,17 @@ namespace fulltext_search_service {
         // Ссылка валидна до следующей модификации индекса
         [[nodiscard]] const std::vector<Entry> &GetWordCount(std::string_view word) const;
 
+        // Вызывает fn(term) для каждого термина в словаре (для fuzzy-поиска)
+        void ForEachVocabularyTerm(const std::function<void(std::string_view)> &fn) const;
+
         // Документ (content-объект) по идентификатору
         // пустой объект при неверном doc_id
         [[nodiscard]] const nlohmann::json &GetDocument(size_t doc_id) const;
+
+        // Текст документа, склеенный из строковых полей (как при индексации)
+        // Пустая строка при неверном doc_id или отсутствии строковых полей
+        // Используется для фразового поиска
+        [[nodiscard]] std::string GetSearchableText(size_t doc_id) const;
 
         [[nodiscard]] size_t GetDocumentCount() const noexcept {
             return docs_.size();
