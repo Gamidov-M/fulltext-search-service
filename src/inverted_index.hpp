@@ -7,6 +7,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 #include <unordered_map>
 
@@ -50,6 +51,11 @@ namespace fulltext_search_service {
         // Указатель на стеммер коллекции (для токенизации запросов и индексации)
         // nullptr если стемминг отключён
         [[nodiscard]] const class Stemmer *GetStemmer() const noexcept;
+
+        // Стоп-слова в нормализованном виде (как токены)
+        // nullptr если не заданы
+        void SetStopWords(std::shared_ptr<const std::unordered_set<std::string>> stop_words);
+        [[nodiscard]] const std::unordered_set<std::string> *GetStopWords() const noexcept;
 
         [[nodiscard]] const std::string &GetStoragePath() const noexcept { return storage_path_; }
 
@@ -125,6 +131,7 @@ namespace fulltext_search_service {
         int max_word_length_ = 100;
         bool dev_mode_ = false;
         std::unique_ptr<Stemmer> stemmer_;
+        std::shared_ptr<const std::unordered_set<std::string>> stop_words_;
         Collection collection_;
         std::vector<nlohmann::json> docs_;
         std::vector<size_t> doc_lengths_;

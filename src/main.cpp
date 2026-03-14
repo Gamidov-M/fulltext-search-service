@@ -1,6 +1,7 @@
 #include "api_server.hpp"
 #include "config.hpp"
 #include "index_registry.hpp"
+#include "stop_words.hpp"
 #include "utils.hpp"
 #include <exception>
 #include <print>
@@ -40,17 +41,19 @@ int main(int argc, char *argv[]) {
 
         AppConfig config;
         constexpr const char *kDefaultConfigPath = "/etc/fulltext-search-service/config.yaml";
+        std::string config_source_path = kDefaultConfigPath;
 
         if (auto path_opt = get_config_path(argc, argv)) {
             if (path_opt->empty()) {
                 std::println(stderr, "Укажите путь к конфиг-файлу: --config=<файл>");
                 return 1;
             }
-            if (auto loaded = LoadConfig(*path_opt, dev_mode)) {
+            config_source_path = *path_opt;
+            if (auto loaded = LoadConfig(config_source_path, dev_mode)) {
                 config = std::move(*loaded);
             } else {
-                Log(dev_mode, "[dev] не удалось загрузить config path={}", *path_opt);
-                std::println(stderr, "Не удалось загрузить конфиг из: {}", *path_opt);
+                Log(dev_mode, "[dev] не удалось загрузить config path={}", config_source_path);
+                std::println(stderr, "Не удалось загрузить конфиг из: {}", config_source_path);
                 return 1;
             }
         } else {
@@ -73,6 +76,7 @@ int main(int argc, char *argv[]) {
         registry.SetBaseStoragePath(config.index.storage_path);
         registry.SetMaxWordLength(config.index.max_word_length);
         registry.SetStemming(config.index.stemming_enabled, config.index.stemming_language);
+        registry.SetStopWords(LoadStopWordsSet(config.index, config_source_path, config.dev_mode));
         registry.SetDevMode(config.dev_mode);
 
         ApiServer api(registry, config.api, config.server, config.index, config.dev_mode);

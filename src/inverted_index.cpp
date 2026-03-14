@@ -71,6 +71,14 @@ namespace fulltext_search_service {
         return stemmer_.get();
     }
 
+    void InvertedIndex::SetStopWords(std::shared_ptr<const std::unordered_set<std::string>> stop_words) {
+        stop_words_ = std::move(stop_words);
+    }
+
+    const std::unordered_set<std::string> *InvertedIndex::GetStopWords() const noexcept {
+        return stop_words_ ? stop_words_.get() : nullptr;
+    }
+
     void InvertedIndex::SetCollection(Collection collection) {
         collection_ = std::move(collection);
     }
@@ -485,7 +493,13 @@ namespace fulltext_search_service {
                                std::views::stride(static_cast<size_t>(num_workers));
                 for (size_t doc_id: indices) {
                     std::unordered_map<std::string, size_t> word_count;
-                    tokenize(searchable_texts[doc_id], word_count, static_cast<std::size_t>(max_word_length_), GetStemmer());
+                    tokenize(
+                        searchable_texts[doc_id],
+                        word_count,
+                        static_cast<std::size_t>(max_word_length_),
+                        GetStemmer(),
+                        GetStopWords()
+                    );
                     size_t doc_len = 0;
                     for (auto &[w, count]: word_count) {
                         doc_len += count;

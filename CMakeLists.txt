@@ -51,6 +51,7 @@ target_include_directories(stemmer PUBLIC ${libstemmer_SOURCE_DIR}/include)
 
 add_library(fulltext_search_service_lib
         src/config.cpp
+        src/stop_words.cpp
         src/utils.cpp
         src/fuzzy.cpp
         src/highlight.cpp

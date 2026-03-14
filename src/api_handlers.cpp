@@ -162,7 +162,13 @@ namespace fulltext_search_service {
                 query_terms = matched_terms;
             } else {
                 std::unordered_map<std::string, size_t> word_count;
-                tokenize(query, word_count, static_cast<std::size_t>(index_config.max_word_length), index->GetStemmer());
+                tokenize(
+                    query,
+                    word_count,
+                    static_cast<std::size_t>(index_config.max_word_length),
+                    index->GetStemmer(),
+                    index->GetStopWords()
+                );
                 for (const auto &[word, _] : word_count) {
                     query_terms.insert(word);
                 }

@@ -46,6 +46,10 @@ namespace fulltext_search_service {
         stemming_language_ = std::move(language);
     }
 
+    void IndexRegistry::SetStopWords(std::shared_ptr<const std::unordered_set<std::string>> stop_words) {
+        stop_words_ = std::move(stop_words);
+    }
+
     void IndexRegistry::SetDevMode(bool dev) {
         dev_mode_ = dev;
     }
@@ -71,6 +75,7 @@ namespace fulltext_search_service {
         index->SetStoragePath(dir.string());
         index->SetMaxWordLength(max_word_length_);
         index->SetStemming(stemming_enabled_, stemming_language_);
+        index->SetStopWords(stop_words_);
         index->SetDevMode(dev_mode_);
         index->SetCollection(std::move(collection));
         if (!index->SaveCollection()) {
@@ -126,6 +131,7 @@ namespace fulltext_search_service {
         index->SetStoragePath(dir.string());
         index->SetMaxWordLength(max_word_length_);
         index->SetStemming(stemming_enabled_, stemming_language_);
+        index->SetStopWords(stop_words_);
         index->SetDevMode(dev_mode_);
         const bool loaded = index->Load();
 

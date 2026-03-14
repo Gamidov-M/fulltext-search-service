@@ -55,6 +55,20 @@ namespace fulltext_search_service {
                     cfg.index.stemming_language = std::move(lang);
                 }
             }
+            if (root["index_stop_words_file"]) {
+                std::string path = root["index_stop_words_file"].as<std::string>();
+                cfg.index.stop_words_file = std::move(path);
+            }
+            if (root["index_stop_words"] && root["index_stop_words"].IsSequence()) {
+                for (const auto &node : root["index_stop_words"]) {
+                    if (node.IsScalar()) {
+                        std::string w = node.as<std::string>();
+                        if (!w.empty()) {
+                            cfg.index.stop_words.push_back(std::move(w));
+                        }
+                    }
+                }
+            }
             if (root["api_default_limit"]) {
                 int v = root["api_default_limit"].as<int>();
                 if (v > 0) {
