@@ -1,11 +1,12 @@
 # Описание параметров в src/config.hpp
 
 host: "0.0.0.0"
-port: 8000
+port: 8001
 # keep_alive_max_count: 300
 # max_request_body_bytes: 2147483647
 
 # storage_path: "/var/lib/fulltext-search-service"
+storage_path: "./data"
 
 # index_max_word_length: 100
 # index_stemming: true
