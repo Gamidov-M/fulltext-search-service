@@ -11,7 +11,7 @@ class SearchTester:
         self.headers = {"Content-Type": "application/json"}
 
     def run_test(self):
-        payload = {"q": "второй", "crop_fields": ["content"], "crop_length": 3, "crop_marker": " *** "}
+        payload = {"q": "второй", "highlight": {"pre": "<mark>", "post": "</mark>"}}
 
         try:
             start_time = time.time()
