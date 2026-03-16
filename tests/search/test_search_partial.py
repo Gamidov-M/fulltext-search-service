@@ -22,7 +22,7 @@ class SearchTester:
 
             request_time = end_time - start_time
 
-            print(f"Status Code: {response.status_code}")
+            print(f"Status Code: {response}")
             print(f"Response: {response.json()}")
             print(f"Время выполнения запроса: {request_time * 1000:.2f} миллисекунд")
         except requests.exceptions.RequestException as e:

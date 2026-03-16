@@ -11,7 +11,7 @@ class SearchTester:
         self.headers = {"Content-Type": "application/json"}
 
     def run_test(self):
-        payload = {"q": "хранившихся", "attributesToRetrieve": ["id", "title"]}
+        payload = {"q": "хранившихся", "attributesToRetrieve": ["id", "title"]}  # Массив имён полей
 
         try:
             start_time = time.time()
