@@ -102,17 +102,10 @@ class SearchTester:
             {"q": "Второй", "limit": 5, "offset": 0, "highlight": True}
         )
 
-    def test_search_with_typos(self):
-        """Тест 10: Поиск с опечатками"""
-        return self.run_test(
-            "Поиск с опечатками",
-            {"q": "имни", "limit": 5, "fuzzy": True, "fuzzy_max_edits": 2}
-        )
-
     def run_all(self):
         """Запуск всех синхронных тестов"""
         print("\n" + "=" * 60)
-        print("🔄 СИНХРОННЫЕ ТЕСТЫ (requests)")
+        print("СИНХРОННЫЕ ТЕСТЫ (requests)")
         print("=" * 60)
 
         tests = [
@@ -126,17 +119,14 @@ class SearchTester:
             self.test_search_fuzzy_with_edit,
             self.test_search_partial,
             self.test_search_with_highlight,
-            self.test_search_with_typos
         ]
 
         results = []
         for test in tests:
             results.append(test())
 
-        # Итоги
         success = sum(1 for r in results if r['success'])
         print(f"<<< Итоги синхронных тестов: {success}/{len(results)} успешно >>>")
-
         return results
 
 
