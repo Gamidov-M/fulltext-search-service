@@ -9,10 +9,24 @@
 #include <ranges>
 #include <stdexcept>
 #include <thread>
+#include <unordered_map>
 
 namespace fulltext_search_service {
 
     namespace {
+
+        void erasePostingForDoc(std::vector<Entry> &vec, size_t doc_id) {
+            auto it = std::lower_bound(vec.begin(), vec.end(), doc_id, [](const Entry &a, size_t d) { return a.doc_id < d; });
+            if (it != vec.end() && it->doc_id == doc_id) {
+                vec.erase(it);
+            }
+        }
+
+        void insertPostingSorted(std::vector<Entry> &vec, size_t doc_id, size_t count) {
+            auto it = std::lower_bound(vec.begin(), vec.end(), doc_id, [](const Entry &a, size_t d) { return a.doc_id < d; });
+            vec.insert(it, Entry{doc_id, count});
+        }
+
         constexpr const char *kDocsFilename = "docs.dat";
         constexpr const char *kDictFilename = "dict.dat";
         constexpr const char *kDocLengthsFilename = "doc_lengths.dat";
@@ -108,6 +122,84 @@ namespace fulltext_search_service {
         }
 
         return result;
+    }
+
+    const CollectionField *InvertedIndex::primaryIntField() const noexcept {
+        for (const auto &f: collection_.fields) {
+            if (f.type == "int") {
+                return &f;
+            }
+        }
+
+        return nullptr;
+    }
+
+    bool InvertedIndex::SupportsIncrementalUpsert() const noexcept {
+        return primaryIntField() != nullptr;
+    }
+
+    void InvertedIndex::rebuildDocTermFreqsAndIdMap() {
+        doc_term_freqs_.clear();
+        doc_term_freqs_.resize(docs_.size());
+        for (const auto &[term, postings]: freq_dictionary_) {
+            for (const auto &e: postings) {
+                if (e.doc_id < doc_term_freqs_.size()) {
+                    doc_term_freqs_[e.doc_id][term] += e.count;
+                }
+            }
+        }
+
+        primary_id_to_doc_.clear();
+        const CollectionField *pk = primaryIntField();
+        if (!pk) {
+            return;
+        }
+
+        for (size_t i = 0; i < docs_.size(); ++i) {
+            auto it = docs_[i].find(pk->name);
+            if (it != docs_[i].end() && (it->is_number_integer() || it->is_number_unsigned())) {
+                primary_id_to_doc_[it->get<int64_t>()] = i;
+            }
+        }
+    }
+
+    void InvertedIndex::removeDocumentPostings(size_t doc_id) {
+        if (doc_id >= doc_term_freqs_.size()) {
+            return;
+        }
+
+        std::unordered_map<std::string, size_t> snapshot = std::move(doc_term_freqs_[doc_id]);
+        doc_term_freqs_[doc_id].clear();
+        for (const auto &[term, _]: snapshot) {
+            auto dict_it = freq_dictionary_.find(term);
+            if (dict_it == freq_dictionary_.end()) {
+                continue;
+            }
+
+            erasePostingForDoc(dict_it->second, doc_id);
+            if (dict_it->second.empty()) {
+                freq_dictionary_.erase(dict_it);
+            }
+        }
+
+        if (doc_id < doc_lengths_.size()) {
+            doc_lengths_[doc_id] = 0;
+        }
+    }
+
+    void InvertedIndex::addDocumentPostings(size_t doc_id, const std::unordered_map<std::string, size_t> &word_count) {
+        if (doc_id >= doc_term_freqs_.size() || doc_id >= doc_lengths_.size()) {
+            return;
+        }
+
+        size_t doc_len = 0;
+        for (const auto &[w, cnt]: word_count) {
+            doc_len += cnt;
+            doc_term_freqs_[doc_id][w] = cnt;
+            insertPostingSorted(freq_dictionary_[w], doc_id, cnt);
+        }
+
+        doc_lengths_[doc_id] = doc_len;
     }
 
     std::string InvertedIndex::GetSearchableText(size_t doc_id) const {
@@ -206,6 +298,8 @@ namespace fulltext_search_service {
 
         if (collection_.fields.empty() || !fs::exists(docs_path) || !fs::exists(dict_path)) {
             Log(dev_mode_, "[dev] inverted_index::Load: коллекция пуста или файлы индекса отсутствуют, пустой индекс");
+            doc_term_freqs_.clear();
+            primary_id_to_doc_.clear();
             return true;
         }
 
@@ -341,6 +435,7 @@ namespace fulltext_search_service {
             Log(dev_mode_, "[dev] inverted_index::Load: длины документов вычислены из словаря");
         }
 
+        rebuildDocTermFreqsAndIdMap();
         return true;
     }
 
@@ -458,6 +553,8 @@ namespace fulltext_search_service {
             docs_.clear();
             freq_dictionary_.clear();
             doc_lengths_.clear();
+            doc_term_freqs_.clear();
+            primary_id_to_doc_.clear();
             Save();
             return;
         }
@@ -574,8 +671,69 @@ namespace fulltext_search_service {
         freq_dictionary_ = std::move(new_dict);
         Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: индекс в памяти map<термин, vector<(doc_id, count)>>, {} терминов", freq_dictionary_.size());
 
+        rebuildDocTermFreqsAndIdMap();
         Save();
         Log(dev_mode_, "[dev] inverted_index::UpdateDocumentBase: готово");
+    }
+
+    std::pair<size_t, size_t> InvertedIndex::UpsertDocuments(std::vector<DocumentInput> input_docs) {
+        if (input_docs.empty()) {
+            return {0, 0};
+        }
+
+        const CollectionField *pk = primaryIntField();
+        if (!pk) {
+            return {0, 0};
+        }
+
+        if (doc_term_freqs_.size() != docs_.size()) {
+            rebuildDocTermFreqsAndIdMap();
+        }
+
+        size_t inserted = 0;
+        size_t updated = 0;
+        const size_t batch_size = input_docs.size();
+        for (auto &rec: input_docs) {
+            nlohmann::json &content = rec.content;
+            const int64_t new_key = content[pk->name].get<int64_t>();
+            const auto it_map = primary_id_to_doc_.find(new_key);
+            if (it_map != primary_id_to_doc_.end()) {
+                const size_t doc_id = it_map->second;
+                removeDocumentPostings(doc_id);
+                docs_[doc_id] = std::move(content);
+                std::unordered_map<std::string, size_t> word_count;
+                tokenize(
+                        buildSearchableText(docs_[doc_id]),
+                        word_count,
+                        static_cast<std::size_t>(max_word_length_),
+                        GetStemmer(),
+                        GetStopWords()
+                );
+                addDocumentPostings(doc_id, word_count);
+                ++updated;
+                continue;
+            }
+
+            const size_t doc_id = docs_.size();
+            docs_.push_back(std::move(content));
+            doc_lengths_.push_back(0);
+            doc_term_freqs_.emplace_back();
+            primary_id_to_doc_[new_key] = doc_id;
+            std::unordered_map<std::string, size_t> word_count;
+            tokenize(
+                    buildSearchableText(docs_.back()),
+                    word_count,
+                    static_cast<std::size_t>(max_word_length_),
+                    GetStemmer(),
+                    GetStopWords()
+            );
+            addDocumentPostings(doc_id, word_count);
+            ++inserted;
+        }
+        Log(dev_mode_, "[dev] inverted_index::UpsertDocuments: batch={} inserted={} updated={} total_docs={}", batch_size, inserted, updated, docs_.size());
+        Save();
+
+        return {inserted, updated};
     }
 
     const std::vector<Entry> &InvertedIndex::GetWordCount(std::string_view word) const {
