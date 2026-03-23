@@ -72,7 +72,7 @@ namespace fulltext_search_service {
         ) {
             std::vector<std::string> query_terms;
             query_terms.reserve(32);
-            tokenizeToSequence(query, query_terms, max_word_length, index.GetStemmer());
+            tokenizeToSequence(query, query_terms, max_word_length, index.GetStemmer(), index.GetStopWords());
 
             if (query_terms.empty()) {
                 out.clear();
@@ -122,7 +122,7 @@ namespace fulltext_search_service {
 
                 std::string text = index.GetSearchableText(doc_id);
                 doc_terms.clear();
-                tokenizeToSequence(text, doc_terms, max_word_length, index.GetStemmer());
+                tokenizeToSequence(text, doc_terms, max_word_length, index.GetStemmer(), index.GetStopWords());
                 if (containsPhrase(doc_terms, query_terms)) {
                     if (out_total) (*out_total)++;
                     if (out.size() < static_cast<size_t>(max_responses)) {
@@ -197,7 +197,7 @@ namespace fulltext_search_service {
             }
 
             std::unordered_map <std::string, size_t> word_count;
-            tokenize(query, word_count, max_word_length, index.GetStemmer());
+            tokenize(query, word_count, max_word_length, index.GetStemmer(), index.GetStopWords());
 
             const size_t N = index.GetDocumentCount();
             const double avgdl = index.GetAverageDocumentLength();

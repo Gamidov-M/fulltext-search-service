@@ -5,8 +5,12 @@
 #include <functional>
 #include <nlohmann/json.hpp>
 #include <memory>
+#include <cstddef>
+#include <cstdint>
 #include <string>
+#include <utility>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 #include <unordered_map>
 
@@ -51,6 +55,11 @@ namespace fulltext_search_service {
         // nullptr если стемминг отключён
         [[nodiscard]] const class Stemmer *GetStemmer() const noexcept;
 
+        // Стоп-слова в нормализованном виде (как токены)
+        // nullptr если не заданы
+        void SetStopWords(std::shared_ptr<const std::unordered_set<std::string>> stop_words);
+        [[nodiscard]] const std::unordered_set<std::string> *GetStopWords() const noexcept;
+
         [[nodiscard]] const std::string &GetStoragePath() const noexcept { return storage_path_; }
 
         // Загружает индекс с диска
@@ -82,6 +91,14 @@ namespace fulltext_search_service {
         // Полная замена базы документов
         // пересчёт индекса в пуле потоков и сохранение на диск
         void UpdateDocumentBase(std::vector<DocumentInput> input_docs);
+
+        // Добавление/обновление документов без полной пересборки индекса
+        // Ключ - первое в схеме поле типа int (должно быть уникально среди документов)
+        // Существующий документ с тем же ключом заменяется на месте (тот же внутренний doc_id)
+        // Возвращает (число новых документов, число обновлённых)
+        [[nodiscard]] std::pair<size_t, size_t> UpsertDocuments(std::vector<DocumentInput> input_docs);
+
+        [[nodiscard]] bool SupportsIncrementalUpsert() const noexcept;
 
         // Список постов отсортирован по doc_id
         // Ссылка валидна до следующей модификации индекса
@@ -118,6 +135,14 @@ namespace fulltext_search_service {
         // Собирает строку для полнотекстового поиска из полей типа string в content по полям коллекции
         [[nodiscard]] std::string buildSearchableText(const nlohmann::json &content) const;
 
+        [[nodiscard]] const CollectionField *primaryIntField() const noexcept;
+
+        void rebuildDocTermFreqsAndIdMap();
+
+        void removeDocumentPostings(size_t doc_id);
+
+        void addDocumentPostings(size_t doc_id, const std::unordered_map<std::string, size_t> &word_count);
+
         // Частотный словарь слово -> список (doc_id, количество вхождений)
         using Dict = std::unordered_map<std::string, std::vector<Entry>, TransparentStringHash, TransparentStringEqual>;
 
@@ -125,10 +150,15 @@ namespace fulltext_search_service {
         int max_word_length_ = 100;
         bool dev_mode_ = false;
         std::unique_ptr<Stemmer> stemmer_;
+        std::shared_ptr<const std::unordered_set<std::string>> stop_words_;
         Collection collection_;
         std::vector<nlohmann::json> docs_;
         std::vector<size_t> doc_lengths_;
         Dict freq_dictionary_;
+        // Прямой индекс - для инкрементального обновления (снятие постингов без полного скана словаря)
+        std::vector<std::unordered_map<std::string, size_t>> doc_term_freqs_;
+        // Значение первого int-поля схемы -> внутренний doc_id
+        std::unordered_map<int64_t, size_t> primary_id_to_doc_;
     };
 
 } // namespace fulltext_search_service

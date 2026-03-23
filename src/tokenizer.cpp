@@ -9,7 +9,8 @@ namespace fulltext_search_service {
             const std::string &text,
             std::unordered_map<std::string, size_t> &out,
             std::size_t max_word_length,
-            const Stemmer *stemmer
+            const Stemmer *stemmer,
+            const std::unordered_set<std::string> *stop_words
     ) {
         out.reserve(out.size() + 32);
         for (auto word_range: text | std::views::split(' ')) {
@@ -26,6 +27,9 @@ namespace fulltext_search_service {
                     key = word;
                 }
                 if (!key.empty()) {
+                    if (stop_words && stop_words->contains(key)) {
+                        continue;
+                    }
                     ++out[std::move(key)];
                 }
             }
@@ -36,7 +40,8 @@ namespace fulltext_search_service {
             const std::string &text,
             std::vector<std::string> &out,
             std::size_t max_word_length,
-            const Stemmer *stemmer
+            const Stemmer *stemmer,
+            const std::unordered_set<std::string> *stop_words
     ) {
         for (auto word_range: text | std::views::split(' ')) {
             std::string word;
@@ -52,6 +57,9 @@ namespace fulltext_search_service {
                     key = word;
                 }
                 if (!key.empty()) {
+                    if (stop_words && stop_words->contains(key)) {
+                        continue;
+                    }
                     out.push_back(std::move(key));
                 }
             }

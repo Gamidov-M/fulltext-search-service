@@ -2,6 +2,7 @@
 
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace fulltext_search_service {
 
@@ -32,6 +33,13 @@ namespace fulltext_search_service {
 
         // Язык стеммера Snowball список языков sb_stemmer_list
         std::string stemming_language = "russian";
+
+        // Файл со стоп-словами: одно слово на строку, UTF-8, строки с # - комментарии
+        // Путь относительно каталога конфиг-файла, если не абсолютный
+        std::string stop_words_file;
+
+        // Дополнительные стоп-слова в конфиге (массив index_stop_words)
+        std::vector<std::string> stop_words;
     };
 
     struct ApiConfigSection {

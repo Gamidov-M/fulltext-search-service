@@ -162,7 +162,13 @@ namespace fulltext_search_service {
                 query_terms = matched_terms;
             } else {
                 std::unordered_map<std::string, size_t> word_count;
-                tokenize(query, word_count, static_cast<std::size_t>(index_config.max_word_length), index->GetStemmer());
+                tokenize(
+                    query,
+                    word_count,
+                    static_cast<std::size_t>(index_config.max_word_length),
+                    index->GetStemmer(),
+                    index->GetStopWords()
+                );
                 for (const auto &[word, _] : word_count) {
                     query_terms.insert(word);
                 }
@@ -367,6 +373,21 @@ namespace fulltext_search_service {
             return;
         }
 
+        bool incremental = false;
+        if (req.has_param("incremental")) {
+            const std::string v = req.get_param_value("incremental");
+            incremental = (v == "1" || v == "true" || v == "yes");
+        }
+
+        if (incremental && !index->SupportsIncrementalUpsert()) {
+            Log(dev_mode, "[dev] post: incremental без int-поля в схеме");
+            sendJson(res, 400, {
+                    {"message", "Инкрементальное обновление требует в схеме коллекции типа поля int"},
+                    {"code",    "incremental_requires_int_key"}
+            });
+            return;
+        }
+
         const Collection &collection = index->GetCollection();
         std::vector<InvertedIndex::DocumentInput> documents;
         documents.reserve(body.size());
@@ -424,11 +445,21 @@ namespace fulltext_search_service {
         }
 
         const int received = static_cast<int>(documents.size());
-        Log(dev_mode, "[dev] post index={} received={}", *name_opt, received);
-        index->UpdateDocumentBase(std::move(documents));
-        sendJson(res, 202, {
-                {"received", received}
-        });
+        Log(dev_mode, "[dev] post index={} received={} incremental={}", *name_opt, received, incremental);
+        if (incremental) {
+            const auto [inserted, updated] = index->UpsertDocuments(std::move(documents));
+            sendJson(res, 202, {
+                    {"received",  received},
+                    {"inserted",  static_cast<int>(inserted)},
+                    {"updated",   static_cast<int>(updated)},
+                    {"incremental", true}
+            });
+        } else {
+            index->UpdateDocumentBase(std::move(documents));
+            sendJson(res, 202, {
+                    {"received", received}
+            });
+        }
     }
 
     void handleListCollections(
