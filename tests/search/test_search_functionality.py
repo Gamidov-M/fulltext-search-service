@@ -103,9 +103,9 @@ class SearchTester:
         )
 
     def run_all(self):
-        """Запуск всех синхронных тестов"""
+        """Запуск всех тестов"""
         print("\n" + "=" * 60)
-        print("СИНХРОННЫЕ ТЕСТЫ (requests)")
+        print("ТЕСТЫ (requests)")
         print("=" * 60)
 
         tests = [
@@ -126,7 +126,7 @@ class SearchTester:
             results.append(test())
 
         success = sum(1 for r in results if r['success'])
-        print(f"<<< Итоги синхронных тестов: {success}/{len(results)} успешно >>>")
+        print(f"<<< Итоги тестов: {success}/{len(results)} успешно >>>")
         return results
 
 
