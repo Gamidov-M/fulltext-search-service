@@ -18,13 +18,18 @@ class TestDownload:
                 documents = json.load(f)
 
             if isinstance(documents, list):
-                payload = [{"content": doc} for doc in documents]
+                payload = documents
+                expected_count = len(payload)
+            elif isinstance(documents, dict) and "content" in documents:
+                payload = [{"content": documents["content"]}]
+                expected_count = 1
             elif isinstance(documents, dict) and "documents" in documents:
                 payload = [{"content": doc} for doc in documents["documents"]]
+                expected_count = len(payload)
             else:
                 raise ValueError(f"Неизвестный формат: {type(documents)}")
+            return payload, expected_count
 
-            return payload, len(payload)
         return _prepare
 
     def test_full_reindex_main(self, load_and_prepare):
