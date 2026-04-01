@@ -49,7 +49,7 @@ stages:
             method: POST
             headers:
                 Content-Type: application/json
-            json: !include tests/data_documents/base_documents.json
+            json: !include /home/magomed/PycharmProjects/fulltext-search-service/tests/data_documents/base_documents.json
         response:
             status_code: 202
             save:
