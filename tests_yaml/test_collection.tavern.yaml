@@ -1,4 +1,4 @@
-test_name: Tests create, get, delete collection
+test_name: Tests collection operations
 
 includes:
   - !include common.yaml
@@ -8,8 +8,7 @@ stages:
         request:
             url: "{service}/indexes/collections"
             method: POST
-            headers:
-                Content-Type: application/json
+            headers: {headers}
             json:
                 name: "{collection_name}"
                 fields:
@@ -30,8 +29,7 @@ stages:
         request:
             url: "{service}/indexes/collections"
             method: GET
-            headers:
-                Content-Type: application/json
+            headers: {headers}
         response:
             status_code: 200
             json:
@@ -41,8 +39,7 @@ stages:
         request:
             url: "{service}/indexes/collections/{collection_name}"
             method: GET
-            headers:
-                Content-Type: application/json
+            headers: {headers}
         response:
             status_code: 200
             json:
@@ -53,8 +50,7 @@ stages:
         request:
             url: "{service}/indexes/collections/{collection_name}"
             method: DELETE
-            headers:
-                Content-Type: application/json
+            headers: {headers}
         response:
             status_code: 200
             json:

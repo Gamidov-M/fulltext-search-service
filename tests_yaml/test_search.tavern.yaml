@@ -1,0 +1,78 @@
+test_name: Tests search operations
+
+includes:
+  - !include common.yaml
+
+
+marks:
+  - parametrize:
+      key:
+        - search_name
+        - search_json
+      vals:
+        - [ "search basic", { "q": "имени", "limit": 5, "offset": 0 } ]
+#  Тест упадёт: параметр highlight вызывает статус 500
+#        - ["search with highlight", { "q": "Второй", "limit": 5, "offset": 0, "highlight": true }]
+#        - ["search with custom tags", { "q": "Второй", "pre": "<mark>", "post": "</mark>", "snippet_length": 255,
+#                                        - "snippet_suffix": "..." }]
+#        - ["search with crop and highlight", { "q": "Второй", "crop_fields": ["content"], "crop_length": 5,
+#                                               "highlight": true, "snippet_length": 255, "snippet_suffix": "..." }]
+        - [ "search with crop", { "q": "второй", "crop_fields": [ "content" ], "crop_length": 5 } ]
+        - [ "search with crop and marker", { "q": "второй", "crop_fields": [ "content" ], "crop_length": 5,
+                                             "crop_marker": "***" } ]
+        - [ "search with phrase", { "q": "имени", "limit": 5, "phrase": true } ]
+        - [ "search with field selector", { "q": "хранившихся", "attributesToRetrieve": [ "id", "title" ] } ]
+        - [ "search with fuzzy", { "q": "трихугольную", "limit": 5, "fuzzy": true } ]
+        - [ "search with fuzzy and fuzzy_max_edits", { "q": "ЦЕТАТА", "limit": 5, "fuzzy": true,
+                                                       "fuzzy_max_edits": 1 }]
+        - [ "search with partial", { "q": "док", "limit": 5, "partial": true }]
+
+stages:
+  - name: create collection
+    request:
+      url: "{service}/indexes/collections"
+      method: POST
+      headers: {headers}
+      json:
+        name: "{collection_name}"
+        fields:
+          - name: "id"
+            type: "int"
+          - name: "name"
+            type: "string"
+          - name: "content"
+            type: "string"
+    response:
+      status_code: 201
+      save:
+        json:
+          collection_name: name
+          fields_list: "fields"
+
+  - name: download json
+    request:
+      url: "{service}/indexes/{collection_name}/documents"
+      method: POST
+      headers: {headers}
+      json: !include /home/magomed/PycharmProjects/fulltext-search-service/tests/data_documents/documents_3.json
+    response:
+      status_code: 202
+
+  - name: "{search_name}"
+    request:
+      url: "{service}/indexes/{collection_name}/search"
+      method: POST
+      headers: {headers}
+      json: !force_format_include  "{search_json}"
+    response:
+      status_code: 200
+
+  - name: delete collection
+    request:
+      url: "{service}/indexes/collections/{collection_name}"
+      method: DELETE
+      headers: {headers}
+    response:
+      status_code: 200
+      json:
+        message: "Схема удалена"

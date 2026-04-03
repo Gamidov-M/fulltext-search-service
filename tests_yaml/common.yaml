@@ -1,6 +1,8 @@
-name: test includes
+name: Test includes
 description: used for testing against local server
 
 variables:
   service: http://127.0.0.1:8001
   collection_name: dissertations
+  headers:
+    Content-Type: application/json
