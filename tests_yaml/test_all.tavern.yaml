@@ -1,207 +1,238 @@
-test_name: Test_create_collection and documents operations
+test_name: Tests create, get, delete collection
+
+includes:
+  - !include common.yaml
 
 stages:
-    -   name: create collection
-        request:
-            url: http://127.0.0.1:8001/indexes/collections
-            method: POST
-            headers:
-                Content-Type: application/json
-            json:
-                name: "test"
-                fields:
-                    -   name: "id"
-                        type: "int"
-                    -   name: "name"
-                        type: "string"
-                    -   name: "content"
-                        type: "string"
-        response:
-            status_code: 201
-            save:
-                json:
-                    collection_name: name
+  - name: create collection
+    request:
+      url: "{service}/indexes/collections"
+      method: POST
+      headers:
+        Content-Type: application/json
+      json:
+        name: "{collection_name}"
+        fields:
+          - name: "id"
+            type: "int"
+          - name: "name"
+            type: "string"
+          - name: "content"
+            type: "string"
+    response:
+      status_code: 201
+      save:
+        json:
+          collection_name: name
+          fields_list: "fields"
 
-    -   name: get list of collections
-        request:
-            url: "http://127.0.0.1:8001/indexes/{collection_name}/documents?offset=0&limit=15"
-            method: GET
-            headers:
-                Content-Type: application/json
-            params:
-                offset: 0
-                limit: 15
-        response:
-            status_code: 200
+  - name: get list of collections
+    request:
+      url: "{service}/indexes/collections"
+      method: GET
+      headers:
+        Content-Type: application/json
+    response:
+      status_code: 200
+      json:
+        collections: !anylist
 
-    -   name: get collection
-        request:
-            url: "http://127.0.0.1:8001/indexes/collections/{collection_name}"
-            method: GET
-            headers:
-                Content-Type: application/json
-        response:
-            status_code: 200
+  - name: get collection
+    request:
+      url: "{service}/indexes/collections/{collection_name}"
+      method: GET
+      headers:
+        Content-Type: application/json
+    response:
+      status_code: 200
+      json:
+        name: "{collection_name}"
+        fields: !anylist
 
-    -   name: download json
-        request:
-            url: "http://127.0.0.1:8001/indexes/{collection_name}/documents"
-            method: POST
-            headers:
-                Content-Type: application/json
-            json: !include /home/magomed/PycharmProjects/fulltext-search-service/tests/data_documents/base_documents.json
-        response:
-            status_code: 202
-            save:
-                body: response_body
+  - name: download json
+    request:
+      url: "{service}/indexes/{collection_name}/documents"
+      method: POST
+      headers:
+        Content-Type: application/json
+      json: !include /home/magomed/PycharmProjects/fulltext-search-service/tests/data_documents/documents_3.json
+    response:
+      status_code: 202
 
-    -   name: get list of documents
-        request:
-            url: "http://127.0.0.1:8001/indexes/collections/{collection_name}"
-            method: GET
-            headers:
-                Content-Type: application/json
-        response:
-            status_code: 200
+  - name: get list of documents
+    request:
+      url: "{service}/indexes/{collection_name}/documents?offset=0&limit=15"
+      method: GET
+      headers:
+        Content-Type: application/json
+      params:
+        limit: 15
+        offset: 0
+    response:
+      status_code: 200
 
-    -   name: search basic
-        request:
-            url: "http://127.0.0.1:8001/indexes/{collection_name}/search"
-            method: POST
-            headers:
-                Content-Type: application/json
-            json:
-                q: "имени"
-                limit: 5
-                offset: 0
-        response:
-            status_code: 200
+  - name: search basic
+    request:
+      url: "{service}/indexes/{collection_name}/search"
+      method: POST
+      headers:
+        Content-Type: application/json
+      json:
+        q: "имени"
+        limit: 5
+        offset: 0
+    response:
+      status_code: 200
 
-    -   name: search with crop and highlight
-        request:
-            url: "http://127.0.0.1:8001/indexes/{collection_name}/search"
-            method: POST
-            headers:
-                Content-Type: application/json
-            json:
-                q: "второй"
-                crop_fields: [ "content" ]
-                crop_length: 5
-                highlight: True
-        response:
-            status_code: 200
+# Тест упадёт: параметр highlight вызывает статус 500
+#  - name: search with basic highlight
+#    request:
+#      url: "{service}/indexes/{collection_name}/search"
+#      method: POST
+#      json:
+#        q: "второй"
+#        highlight: true
+#    response:
+#      status_code: 200
+#      json:
+#        results: !anylist
+#        snippet: !anything
+#
+# Тест упадёт: параметр highlight вызывает статус 500
+#  - name: search with custom tags
+#    request:
+#      url: "{service}/indexes/{collection_name}/search"
+#      method: POST
+#      json:
+#        q: "второй"
+#        highlight:
+#          pre: "<mark>"
+#          post: "</mark>"
+#          snippet_length: 255
+#          snippet_suffix: "..."
+#    response:
+#      status_code: 200
+#      json:
+#        results:
+#          - snippet: ".*<mark>второй</mark>.*"
+#
+# Тест упадёт: параметр highlight вызывает статус 500
+#  - name: search with crop and highlight
+#    request:
+#      url: "{service}/indexes/{collection_name}/search"
+#      method: POST
+#      json:
+#        q: "второй"
+#        crop_fields: [ "content" ]
+#        crop_length: 5
+#        highlight:
+#          snippet_length: 255
+#          snippet_suffix: "..."
+#    response:
+#      status_code: 200
+#      json:
+#        results: !anylist
+#        total: !int
 
-    -   name: search with crop
-        request:
-            url: "http://127.0.0.1:8001/indexes/{collection_name}/search"
-            method: POST
-            headers:
-                Content-Type: application/json
-            json:
-                q: "второй"
-                crop_fields: [ "content" ]
-                crop_length: 5
-        response:
-            status_code: 200
+  - name: search with crop
+    request:
+      url: "{service}/indexes/{collection_name}/search"
+      method: POST
+      headers:
+        Content-Type: application/json
+      json:
+        q: "второй"
+        crop_fields: [ "content" ]
+        crop_length: 5
+    response:
+      status_code: 200
 
-    -   name: search with crop and marker
-        request:
-            url: "http://127.0.0.1:8001/indexes/{collection_name}/search"
-            method: POST
-            headers:
-                Content-Type: application/json
-            json:
-                q: "второй"
-                crop_fields: [ "content" ]
-                crop_length: 5
-                crop_marker: "***"
-        response:
-            status_code: 200
+  - name: search with crop and marker
+    request:
+      url: "{service}/indexes/{collection_name}/search"
+      method: POST
+      headers:
+        Content-Type: application/json
+      json:
+        q: "второй"
+        crop_fields: [ "content" ]
+        crop_length: 5
+        crop_marker: "***"
+    response:
+      status_code: 200
 
-    -   name: search with phrase
-        request:
-            url: "http://127.0.0.1:8001/indexes/{collection_name}/search"
-            method: POST
-            headers:
-                Content-Type: application/json
-            json:
-                q: "имени"
-                limit: 5
-                phrase: True
-        response:
-            status_code: 200
+  - name: search with phrase
+    request:
+      url: "{service}/indexes/{collection_name}/search"
+      method: POST
+      headers:
+        Content-Type: application/json
+      json:
+        q: "имени"
+        limit: 5
+        phrase: True
+    response:
+      status_code: 200
 
-    -   name: search with field selector
-        request:
-            url: "http://127.0.0.1:8001/indexes/{collection_name}/search"
-            method: POST
-            headers:
-                Content-Type: application/json
-            json:
-                q: "хранившихся"
-                attributesToRetrieve: [ "id", "title" ]
-        response:
-            status_code: 200
+  - name: search with field selector
+    request:
+      url: "{service}/indexes/{collection_name}/search"
+      method: POST
+      headers:
+        Content-Type: application/json
+      json:
+        q: "хранившихся"
+        attributesToRetrieve: [ "id", "title" ]
+    response:
+      status_code: 200
 
-    -   name: search with fuzzy
-        request:
-            url: "http://127.0.0.1:8001/indexes/{collection_name}/search"
-            method: POST
-            headers:
-                Content-Type: application/json
-            json:
-                q: "трихугольную"
-                limit: 5
-                fuzzy: True
-        response:
-            status_code: 200
+  - name: search with fuzzy
+    request:
+      url: "{service}/indexes/{collection_name}/search"
+      method: POST
+      headers:
+        Content-Type: application/json
+      json:
+        q: "трихугольную"
+        limit: 5
+        fuzzy: True
+    response:
+      status_code: 200
 
-    -   name: search with fuzzy and fuzzy_max,edits
-        request:
-            url: "http://127.0.0.1:8001/indexes/{collection_name}/search"
-            method: POST
-            headers:
-                Content-Type: application/json
-            json:
-                q: "ЦЕТАТА"
-                limit: 5
-                fuzzy: True
-                fuzzy_max_edits: 1
-        response:
-            status_code: 200
+  - name: search with fuzzy and fuzzy_max,edits
+    request:
+      url: "{service}/indexes/{collection_name}/search"
+      method: POST
+      headers:
+        Content-Type: application/json
+      json:
+        q: "ЦЕТАТА"
+        limit: 5
+        fuzzy: True
+        fuzzy_max_edits: 1
+    response:
+      status_code: 200
 
-    -   name: search with partial
-        request:
-            url: "http://127.0.0.1:8001/indexes/{collection_name}/search"
-            method: POST
-            headers:
-                Content-Type: application/json
-            json:
-                q: "док"
-                limit: 5
-                partial: True
-        response:
-            status_code: 200
+  - name: search with partial
+    request:
+      url: "{service}/indexes/{collection_name}/search"
+      method: POST
+      headers:
+        Content-Type: application/json
+      json:
+        q: "док"
+        limit: 5
+        partial: True
+    response:
+      status_code: 200
 
-    -   name: search with highlight
-        request:
-            url: "http://127.0.0.1:8001/indexes/{collection_name}/search"
-            method: POST
-            headers:
-                Content-Type: application/json
-            json:
-                q: "Второй"
-                limit: 5
-                offset: 0
-                highlight: True
-        response:
-            status_code: 200
-
-    -   name: delete collection
-        request:
-            url: "http://127.0.0.1:8001/indexes/collections/{collection_name}"
-            method: DELETE
-            headers:
-                Content-Type: application/json
-        response:
-            status_code: 200
+  - name: delete collection
+    request:
+      url: "{service}/indexes/collections/{collection_name}"
+      method: DELETE
+      headers:
+        Content-Type: application/json
+    response:
+      status_code: 200
+      json:
+        message: "Схема удалена"

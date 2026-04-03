@@ -1,56 +1,61 @@
-test_name: Test_create_collection and documents operations
+test_name: Tests create, get, delete collection
+
+includes:
+  - !include common.yaml
 
 stages:
-  - name: create collection
-    request:
-      url: http://127.0.0.1:8001/indexes/collections
-      method: POST
-      headers:
-        Content-Type: application/json
-      json:
-        name: "test"
-        fields:
-          - name: "id"
-            type: "int"
-          - name: "name"
-            type: "string"
-          - name: "content"
-            type: "string"
-    response:
-      status_code: 201
-      save:
-          json:
-              collection_name: name
+    -   name: create collection
+        request:
+            url: "{service}/indexes/collections"
+            method: POST
+            headers:
+                Content-Type: application/json
+            json:
+                name: "{collection_name}"
+                fields:
+                    -   name: "id"
+                        type: "int"
+                    -   name: "name"
+                        type: "string"
+                    -   name: "content"
+                        type: "string"
+        response:
+            status_code: 201
+            save:
+                json:
+                    collection_name: name
+                    fields_list: "fields"
 
-  - name: get list of collections
-    request:
-      url: "http://127.0.0.1:8001/indexes/{collection_name}/documents?offset=0&limit=15"
-      method: GET
-      headers:
-        Content-Type: application/json
-      params:
-        offset: 0
-        limit: 15
-    response:
-      status_code: 200
+    -   name: get list of collections
+        request:
+            url: "{service}/indexes/collections"
+            method: GET
+            headers:
+                Content-Type: application/json
+        response:
+            status_code: 200
+            json:
+                collections: !anylist
 
-  -   name: get collection
-      request:
-          url: "http://127.0.0.1:8001/indexes/collections/{collection_name}"
-          method: GET
-          headers:
-              Content-Type: application/json
-      response:
-          status_code: 200
-          json:
-              name: "test"
-              fields: !anylist
+    -   name: get collection
+        request:
+            url: "{service}/indexes/collections/{collection_name}"
+            method: GET
+            headers:
+                Content-Type: application/json
+        response:
+            status_code: 200
+            json:
+                name: "{collection_name}"
+                fields: !anylist
 
-  -   name: delete collection
-      request:
-          url: "http://127.0.0.1:8001/indexes/collections/{collection_name}"
-          method: DELETE
-          headers:
-              Content-Type: application/json
-      response:
-          status_code: 200
+    -   name: delete collection
+        request:
+            url: "{service}/indexes/collections/{collection_name}"
+            method: DELETE
+            headers:
+                Content-Type: application/json
+        response:
+            status_code: 200
+            json:
+                message: "Схема удалена"
